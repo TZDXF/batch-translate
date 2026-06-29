@@ -1,0 +1,45 @@
+{
+  "name": "batch-translate",
+  "version": "0.0.1",
+  "description": "浏览器 AI 双语对照翻译扩展",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "TZDXF",
+  "packageManager": "pnpm@10.22.0",
+  "engines": {
+    "node": ">=20.12.0"
+  },
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "@preact/signals-core": "^1.14.3",
+    "gpt-tokenizer": "^3.4.0",
+    "idb": "^8.0.3",
+    "preact": "^10.29.3",
+    "webextension-polyfill": "^0.12.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.61.1",
+    "@types/chrome": "^0.2.0",
+    "@types/webextension-polyfill": "^0.12.5",
+    "eslint": "^9.39.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.62.0",
+    "vitest": "^4.1.9",
+    "wxt": "^0.20.27"
+  }
+}
