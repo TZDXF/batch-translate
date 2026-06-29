@@ -16,13 +16,17 @@ export interface Paragraph {
   /** 原文。 */
   text: string;
   /** 段落分类，默认按正文处理（提取器产出时填充，渲染层可不关心）。 */
-  category?: ParagraphCategory;
+  category?: BlockCategory;
   /**
    * 原段落 DOM 节点引用 —— 仅 content 侧渲染层持有，绝不跨 chrome 边界传递
    * （不可结构化克隆）。SW / popup / options 侧该字段恒为 undefined。
    * 见架构 2.1「段落状态映射」。
    */
   node?: HTMLElement;
+  /** 原文块级元素 DOM 引用（提取器产出，只读，渲染器在其后插入译文 wrapper）。 */
+  element?: Element;
+  /** 内联标记占位符映射，供 restore 回填重建内联 DOM（提取器产出）。 */
+  placeholders?: Placeholder[];
 }
 
 /** 批量协议的最小翻译单元。见架构 4.2：{id, text}。 */
@@ -165,3 +169,41 @@ export type DisplayMode = 'bilingual' | 'translation' | 'original';
  * - highlight：马克笔高亮
  */
 export type TranslationStyle = 'normal' | 'blur' | 'underline' | 'highlight';
+
+/**
+ * 块级分类 —— DOM 提取器 block-classifier 产出，决定是否进入翻译队列。
+ * 与 ParagraphCategory 等价（值集合略简：nav ≈ navigation），保留 PR-8 原命名。
+ */
+export type BlockCategory = 'content' | 'nav' | 'code' | 'skip';
+
+/**
+ * 占位符节点：一个内联标签的可重建结构。
+ *
+ * 嵌套内联（如 `<strong>...<em>...</em>...</strong>`）通过 children 中的
+ * `{ ph: n }` 引用子占位符表达 —— 顶层 text 只出现最外层内联标签的 `[[n]]`，
+ * 内层标签收纳在其父占位符的 children 里。
+ */
+export interface PlaceholderNode {
+  /** 标签名（小写），如 'a' | 'strong' | 'code' */
+  tag: string;
+  /** 属性键值对（保留出现顺序），如 href / title，回填时逐条 setAttribute */
+  attrs: Array<[string, string]>;
+  /** 子内容：字符串为字面文本，{ ph } 为嵌套占位符引用 */
+  children: Array<string | { ph: number }>;
+}
+
+/** inline-markup.serialize 产出的占位符。 */
+export interface Placeholder {
+  /** 占位符序号，对应 `[[n]]` 中的 n */
+  index: number;
+  /** 该内联节点的可重建结构 */
+  node: PlaceholderNode;
+}
+
+/** serialize / restore 用的纯文本 + 占位符映射。 */
+export interface SerializedInline {
+  /** 含 `[[n]]` 占位符的纯文本，作为翻译协议输入发给 LLM */
+  text: string;
+  /** 占位符列表 */
+  placeholders: Placeholder[];
+}
