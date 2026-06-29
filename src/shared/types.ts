@@ -15,7 +15,14 @@ export interface Paragraph {
   id: string;
   /** 原文。 */
   text: string;
-  category: ParagraphCategory;
+  /** 段落分类，默认按正文处理（提取器产出时填充，渲染层可不关心）。 */
+  category?: ParagraphCategory;
+  /**
+   * 原段落 DOM 节点引用 —— 仅 content 侧渲染层持有，绝不跨 chrome 边界传递
+   * （不可结构化克隆）。SW / popup / options 侧该字段恒为 undefined。
+   * 见架构 2.1「段落状态映射」。
+   */
+  node?: HTMLElement;
 }
 
 /** 批量协议的最小翻译单元。见架构 4.2：{id, text}。 */
@@ -141,3 +148,20 @@ export interface BatchState {
   /** 已重试次数。 */
   attempts: number;
 }
+
+/**
+ * 显示模式 —— 对应 storage.ui.showOriginal 的三态扩展（架构 6.2）。
+ * - bilingual：原文 + 译文双显（默认）
+ * - translation：仅译文（隐藏原文）
+ * - original：仅原文（隐藏译文，等同未翻译视图）
+ */
+export type DisplayMode = 'bilingual' | 'translation' | 'original';
+
+/**
+ * 译文样式预设 —— 对应 storage.ui.translationStyle（架构 6.2）。
+ * - normal：无特效
+ * - blur：虚化（hover 显形）
+ * - underline：下划线
+ * - highlight：马克笔高亮
+ */
+export type TranslationStyle = 'normal' | 'blur' | 'underline' | 'highlight';

@@ -16,6 +16,7 @@
   "devDependencies": {
     "fake-indexeddb": "^6.0.1",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "jsdom": "^25.0.1"
   }
 }
