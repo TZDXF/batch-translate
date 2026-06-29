@@ -15,7 +15,9 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    "allowJs": false,
     "types": []
   },
-  "include": ["src", "vitest.config.ts"]
+  "include": ["src", "vitest.config.ts", "vitest.setup.ts"],
+  "exclude": ["node_modules", "dist", ".output", ".wxt", "coverage"]
 }
