@@ -50,6 +50,7 @@ import { estimateTokens } from './batcher/token-estimator';
 import { ConcurrencyController } from './scheduler/concurrency-controller';
 import { withRetry as schedulerWithRetry } from './scheduler/retry';
 import { CacheStore, type CacheEntry as StoreCacheEntry } from './cache/cache-store';
+import { syncCacheKey } from './cache/sync-cache-key';
 import { createEngineRegistry } from './engines/registry';
 import { loadConfig } from './config/config-store';
 // P1-1 智能体模式
@@ -209,20 +210,7 @@ export function buildPortServerDeps(mods: Stage2Modules): PortServerDeps {
 // 适配器：把 Stage 2 真实实现包装成 orchestrator DI 契约
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** 同步确定性 cacheKey（FNV-1a 64bit），对齐 orchestrator 同步契约（见文件头注释）。 */
-function syncCacheKey(source: string, engineId: string, fingerprint: string, targetLang: string): string {
-  // NUL 分隔字段，防 "a"+"bc" 与 "ab"+"c" 碰撞（与 cache-key.ts 同策略）。
-  const data = [source, engineId, fingerprint, targetLang].join(' ');
-  // FNV-1a 64bit（用两段 32bit 拼接，Math.imul 保证 32bit 回绕）。
-  let h1 = 0xcbf29ce4 >>> 0;
-  let h2 = 0x84222325 >>> 0;
-  for (let i = 0; i < data.length; i++) {
-    const c = data.codePointAt(i)!;
-    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
-    h2 = Math.imul(h2 ^ c, 0x01000193) >>> 0;
-  }
-  return `${engineId}|${fingerprint}|${targetLang}|${h1.toString(16)}${h2.toString(16)}`;
-}
+/** 同步确定性 cacheKey 已提取至 ./cache/sync-cache-key.ts，供 content 侧回写缓存共用。 */
 
 /**
  * Protocol 适配器：protocol.ts 导出的是一组纯函数，这里聚合成 orchestrator 期望的对象。

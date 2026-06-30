@@ -9,6 +9,9 @@ import {
 } from '../../background/config/config-store';
 import { clearCache, getCacheStats, type CacheStats } from '../../background/config/cache-actions';
 import { EngineManager } from './engine-manager';
+import { DomainSection } from './domain-section';
+import { ShortcutsSection } from './shortcuts-section';
+import { AgentSection } from './agent-section';
 
 const LANGUAGES: ReadonlyArray<readonly [string, string]> = [
   ['zh-CN', '简体中文'],
@@ -43,7 +46,10 @@ export function App() {
       <EngineManager config={config} onChanged={() => {}} />
 
       <TranslationSection config={config} />
+      <AgentSection config={config} />
       <SchedulingSection config={config} />
+      <DomainSection config={config} />
+      <ShortcutsSection config={config} />
       <CacheSection />
       <PrivacySection config={config} />
     </div>
@@ -78,9 +84,9 @@ function TranslationSection({ config }: { config: AppConfig }) {
           onChange={(e) => void patchConfig({ mode: e.currentTarget.value as TranslateMode })}
         >
           <option value="basic">基础（批量 JSON 协议）</option>
-          <option value="agent" disabled>智能体（P1 预留）</option>
+          <option value="agent">智能体（角色 / 术语 / 风格）</option>
         </select>
-        <span class="muted">智能体模式（角色/术语/风格）为 P1 范围</span>
+        <span class="muted">智能体模式可自定义系统提示词 / 角色 / 风格预设（见下方）</span>
       </div>
     </div>
   );

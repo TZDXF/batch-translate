@@ -15,15 +15,18 @@ import type {
   AgentConfig,
   AppConfig,
   CacheConfig,
+  DomainPolicy,
   EngineConfig,
   EngineProvider,
   SchedulingConfig,
+  Shortcuts,
   TranslateMode,
   UIConfig,
 } from '../../shared/types';
 import {
   CACHE_DEFAULT_MAX_SIZE_MB,
   DEFAULT_SCHEDULING,
+  DEFAULT_SHORTCUTS,
   MAX_ITEMS_PER_BATCH,
   STORAGE_KEY_CONFIG,
 } from '../../shared/constants';
@@ -80,7 +83,9 @@ export function getDefaultConfig(): AppConfig {
     },
     scheduling: { ...DEFAULT_SCHEDULING },
     cache: { enabled: true, maxSizeMB: CACHE_DEFAULT_MAX_SIZE_MB, ttlDays: 0 },
-    ui: { showOriginal: true, translationStyle: 'default', hoverOnly: false },
+    ui: { showOriginal: true, translationStyle: 'default', hoverOnly: false, displayMode: 'bilingual' },
+    domain: { mode: 'blacklist', blacklist: [], whitelist: [] },
+    shortcuts: { ...DEFAULT_SHORTCUTS },
   };
 }
 
@@ -157,6 +162,21 @@ export function normalizeConfig(raw: unknown): AppConfig {
     showOriginal: typeof uiSrc['showOriginal'] === 'boolean' ? uiSrc['showOriginal'] : def.ui.showOriginal,
     translationStyle: typeof uiSrc['translationStyle'] === 'string' ? uiSrc['translationStyle'] : def.ui.translationStyle,
     hoverOnly: typeof uiSrc['hoverOnly'] === 'boolean' ? uiSrc['hoverOnly'] : def.ui.hoverOnly,
+    displayMode: normalizeDisplayMode(uiSrc['displayMode'], uiSrc['showOriginal'], def.ui.displayMode),
+  };
+
+  const domainSrc = (typeof r['domain'] === 'object' && r['domain'] !== null ? r['domain'] : {}) as Record<string, unknown>;
+  const domain: DomainPolicy = {
+    mode: domainSrc['mode'] === 'whitelist' ? 'whitelist' : 'blacklist',
+    blacklist: normalizeDomainList(domainSrc['blacklist']),
+    whitelist: normalizeDomainList(domainSrc['whitelist']),
+  };
+
+  const shortcutsSrc = (typeof r['shortcuts'] === 'object' && r['shortcuts'] !== null ? r['shortcuts'] : {}) as Record<string, unknown>;
+  const shortcuts: Shortcuts = {
+    toggle: typeof shortcutsSrc['toggle'] === 'string' && shortcutsSrc['toggle'].trim() ? shortcutsSrc['toggle'].trim() : DEFAULT_SHORTCUTS.toggle,
+    cycleDisplayMode: typeof shortcutsSrc['cycleDisplayMode'] === 'string' && shortcutsSrc['cycleDisplayMode'].trim() ? shortcutsSrc['cycleDisplayMode'].trim() : DEFAULT_SHORTCUTS.cycleDisplayMode,
+    retranslate: typeof shortcutsSrc['retranslate'] === 'string' && shortcutsSrc['retranslate'].trim() ? shortcutsSrc['retranslate'].trim() : DEFAULT_SHORTCUTS.retranslate,
   };
 
   const activeEngineId = typeof r['activeEngineId'] === 'string' ? r['activeEngineId'] : def.activeEngineId;
@@ -172,7 +192,53 @@ export function normalizeConfig(raw: unknown): AppConfig {
     scheduling: normalizeScheduling((typeof r['scheduling'] === 'object' && r['scheduling'] !== null ? r['scheduling'] : {}) as Partial<SchedulingConfig>),
     cache,
     ui,
+    domain,
+    shortcuts,
   };
+}
+
+/** displayMode 归一化：优先取合法值，否则按旧 showOriginal 布尔投影，再否则默认。 */
+function normalizeDisplayMode(raw: unknown, showOriginalRaw: unknown, fallback: UIConfig['displayMode']): UIConfig['displayMode'] {
+  if (raw === 'bilingual' || raw === 'translation' || raw === 'original') return raw;
+  // 旧配置无 displayMode：showOriginal=false → translation（仅译文），true → bilingual。
+  if (showOriginalRaw === false) return 'translation';
+  return fallback;
+}
+
+/**
+ * 域名列表归一化：仅保留非空去重字符串。
+ * 用户可能在 options 粘贴整条 URL，此处剥离 scheme/path/port，与 content/domain-policy
+ * 的 normalizeDomainEntry 行为一致，保证存储值恒为主机名（无论从哪条路径写入）。
+ */
+function normalizeDomainList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const v = stripToHostname(item);
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+/** 把用户输入剥离为主机名：去 scheme/path/port/userinfo，小写，去尾点，去前导 www.。 */
+function stripToHostname(entry: string): string {
+  let v = entry.trim().toLowerCase();
+  if (!v) return '';
+  const schemeIdx = v.indexOf('://');
+  if (schemeIdx >= 0) v = v.slice(schemeIdx + 3);
+  const slashIdx = v.indexOf('/');
+  if (slashIdx >= 0) v = v.slice(0, slashIdx);
+  const atIdx = v.lastIndexOf('@');
+  if (atIdx >= 0) v = v.slice(atIdx + 1);
+  const colonIdx = v.indexOf(':');
+  if (colonIdx >= 0) v = v.slice(0, colonIdx);
+  if (v.endsWith('.')) v = v.slice(0, -1);
+  if (v.startsWith('www.')) v = v.slice(4);
+  return v;
 }
 
 // ─── 读写 ──────────────────────────────────────────────────────────────────
@@ -207,6 +273,8 @@ export interface ConfigPatch {
   scheduling?: Partial<SchedulingConfig>;
   cache?: Partial<CacheConfig>;
   ui?: Partial<UIConfig>;
+  domain?: Partial<DomainPolicy>;
+  shortcuts?: Partial<Shortcuts>;
 }
 
 /** 局部更新（合并各段后落盘 + 通知）。返回写回后的完整配置。 */
@@ -222,6 +290,8 @@ export async function patchConfig(patch: ConfigPatch): Promise<AppConfig> {
     cache: { ...cur.cache, ...(patch.cache ?? {}) },
     agent: { ...cur.agent, ...(patch.agent ?? {}) },
     ui: { ...cur.ui, ...(patch.ui ?? {}) },
+    domain: { ...cur.domain, ...(patch.domain ?? {}) },
+    shortcuts: { ...cur.shortcuts, ...(patch.shortcuts ?? {}) },
   };
   await saveConfig(next);
   return next;

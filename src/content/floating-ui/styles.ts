@@ -68,4 +68,12 @@ export const CONTROL_BAR_STYLES = `
   font-size: 11px;
   color: #2563eb;
 }
+.bt-blocked {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #92400e;
+  background: #fef3c7;
+  padding: 4px 6px;
+  border-radius: 5px;
+}
 `;
