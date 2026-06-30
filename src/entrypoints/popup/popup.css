@@ -1,0 +1,124 @@
+:root {
+  --bt-accent: #2563eb;
+  --bt-muted: #636c76;
+  --bt-border: #d0d7de;
+  --bt-text: #1f2328;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  width: 320px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--bt-text);
+}
+.head {
+  padding: 12px 14px 8px;
+}
+.head h1 {
+  font-size: 15px;
+  margin: 0 0 2px;
+}
+.head .sub {
+  font-size: 11px;
+  color: var(--bt-muted);
+}
+.section {
+  padding: 8px 14px;
+  border-top: 1px solid var(--bt-border);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.row label {
+  min-width: 56px;
+  color: var(--bt-muted);
+}
+select,
+input[type='number'] {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--bt-border);
+  border-radius: 5px;
+  font-size: 12px;
+}
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: #cbd5e1;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toggle.on {
+  background: var(--bt-accent);
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: #fff;
+  border-radius: 50%;
+  transition: left 0.15s;
+}
+.toggle.on::after {
+  left: 22px;
+}
+.progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+.progress {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--bt-accent);
+  transition: width 0.2s ease;
+}
+.pct {
+  font-size: 11px;
+  color: var(--bt-muted);
+  min-width: 30px;
+  text-align: right;
+}
+.dest {
+  font-size: 11px;
+  color: var(--bt-muted);
+  word-break: break-all;
+}
+.dest b {
+  color: var(--bt-text);
+}
+.state {
+  font-size: 11px;
+  color: var(--bt-accent);
+  margin-top: 2px;
+}
+.err {
+  font-size: 11px;
+  color: #b91c1c;
+}
+.link {
+  display: block;
+  text-align: right;
+  font-size: 11px;
+  color: var(--bt-accent);
+  text-decoration: none;
+  padding: 6px 14px 10px;
+}

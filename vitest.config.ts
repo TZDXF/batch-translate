@@ -1,14 +1,18 @@
 import { defineConfig } from 'vitest/config';
 
-// 共享契约层（src/shared）为纯类型/常量/纯函数；content 渲染层测试用 jsdom 提供 DOM。
-// fake-indexeddb 在测试环境注入全局 indexedDB / IDBKeyRange,供 idb 使用（node 与 jsdom 均可）。
-// e2e 走 Playwright（见架构第 1 节）。
+// 配置/密钥层纯逻辑 + content/UI 组件统一 jsdom（组件测试需要 DOM）。
+// .tsx 的 JSX 走 vitest(vite) 的 esbuild 转换（automatic runtime + preact），不引
+// @preact/preset-vite（其依赖的 vite 版本与 vitest 内置 vite 冲突，会导致 .tsx 不被收集）。
+// fake-indexeddb 在 jsdom 环境注入全局 indexedDB / IDBKeyRange,供 idb 使用。
 export default defineConfig({
+  esbuild: {
+    jsx: 'automatic',
+    jsxImportSource: 'preact',
+  },
   test: {
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
     environment: 'jsdom',
-    globals: false,
     setupFiles: ['./vitest.setup.ts'],
-    include: ['src/**/*.test.ts'],
     clearMocks: true,
     restoreMocks: true,
   },
