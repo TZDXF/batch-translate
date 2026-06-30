@@ -20,7 +20,7 @@
 - **加密密钥存储**（TRA-4 / TRA-12）：API Key 经 AES-GCM 加密落本地，主密钥存 storage.local（方案 a），绝不进 storage.sync（云同步）。
 - **跨上下文消息契约**（P0-2 / TRA-3）：discriminated union 单一事实来源 `src/shared/messages.ts`；低频命令用 `runtime.sendMessage`，翻译主通道用 Port 长连接 `translate:<tabId>`。
 - **WXT 工程脚手架**（P0-1 / TRA-2）：三入口（background / content / options+popup）+ Vitest 单测基座 + Playwright e2e 基座。
-- **Playwright e2e + 集成测试**（P0-12 / TRA-13）：mock LLM server + 加载 `.output/chrome-mv3` 真实扩展的 e2e 套件（translate-page / batch-protocol / cache / concurrency / sw-recovery / config）；真实 Stage 2 模块装配的流水线集成测试（批量合并 / 缓存命中 / 并发上限 / 部分失败重发 / CANCEL）+ 渲染集成测试（双语注入 / 原文零污染 / 占位符还原 / 容器感知）。
+- **Playwright e2e + 集成测试**（P0-12 / TRA-13）：mock LLM server + 加载 `.output/chrome-mv3` 真实扩展的 e2e 套件（translate-page / batch-protocol / cache / concurrency / sw-recovery / config）；真实 Stage 2 模块装配的流水线集成测试（批量合并 / 缓存命中 / 并发上限 / 部分失败重发 / CANCEL）+ 渲染集成测试（双语注入 / 原文零污染 / 占位符还原 / 容器感知）+ 真实端点集成测试（真实 OpenAI 兼容端点驱动 `OpenAIEngine` + orchestrator + cache，验证英文段 → 中文译文 / id 对齐 / 批量合并 / 缓存命中；端点不可达时 skip）。
 
 ### 变更
 

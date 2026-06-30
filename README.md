@@ -83,14 +83,28 @@ options 页可调：
 ## 测试
 
 ```bash
-pnpm test       # Vitest 单测 + 流水线/渲染集成测试（314 项）
+pnpm test       # Vitest 单测 + 流水线/渲染集成测试（321 项）
 pnpm typecheck  # TypeScript 类型检查
 pnpm e2e        # 先 build 再跑 Playwright e2e（需支持 MV3 SW 追踪的 Chromium 环境）
+pnpm test:real  # 真实端点集成（需 BT_REAL_BASE_URL/BT_REAL_API_KEY/BT_REAL_MODEL 环境变量，内网端点可达时启用）
 ```
 
 e2e 覆盖差异化点：translate-page（双语渲染 + 原文零污染 + 段落对齐）、batch-protocol（多段合并 + 部分失败重发）、cache（二次命中请求数为 0）、concurrency（在途不超 maxConcurrent）、sw-recovery（恢复 alarm）、config（options 配引擎生效）。mock LLM server 不依赖真实 API Key。
 
-> 注：Playwright 对 MV3 Service Worker 的追踪在部分 Chromium/Playwright 版本组合下不可用；此时 e2e specs 经环境守卫 skip，真实翻译流水线由 `pnpm test` 的集成测试覆盖（`pipeline-integration.test.ts` 用真实 Stage 2 模块 + mock 引擎验证批量合并 / 缓存 / 并发 / 部分失败 / CANCEL）。
+集成测试（`pnpm test`）覆盖真实流水线：`pipeline-integration`（真实 Stage 2 + mock 引擎：批量合并 / 缓存 / 并发 / 部分失败 / CANCEL）、`render-integration`（dom-walker + bilingual-renderer：双语注入 / 原文零污染 / 占位符还原 / 容器感知）、`real-endpoint-integration`（真实 OpenAI 兼容端点：英文段 → 中文译文 / id 对齐 / 批量合并 / 缓存命中）。
+
+**真实端点集成**：`real-endpoint-integration.test.ts` 用真实 OpenAI 兼容端点驱动 `OpenAIEngine` + protocol + orchestrator + cache，验证插件确能端到端翻译。端点配置走环境变量（内网测试端点，非公开）：
+
+```bash
+BT_REAL_BASE_URL=http://192.168.3.3:8084/v1 \
+BT_REAL_API_KEY=sk-... \
+BT_REAL_MODEL=auto \
+pnpm test:real
+```
+
+端点不可达或缺配置时自动 skip，不阻塞 `pnpm test`。
+
+> 注：Playwright 对 MV3 Service Worker 的追踪在部分 Chromium/Playwright 版本组合下不可用；此时 e2e specs 经环境守卫 skip，真实翻译流水线由 `pnpm test` 的集成测试覆盖。
 
 ## 状态
 

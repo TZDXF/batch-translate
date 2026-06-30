@@ -12,6 +12,7 @@
     "prepare": "wxt prepare || true",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:real": "vitest run real-endpoint",
     "typecheck": "tsc --noEmit",
     "e2e": "wxt build && playwright test"
   },
