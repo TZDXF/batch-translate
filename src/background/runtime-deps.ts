@@ -110,7 +110,7 @@ export function buildPortServerDeps(mods: Stage2Modules): PortServerDeps {
  *   import { concurrencyController } from './scheduler/concurrency-controller';
  *   import { withRetry } from './scheduler/retry';
  *   import { cacheStore, cacheKey } from './cache/cache-store';  // + cache-key
- *   import { engineRegistry } from './engines/registry';
+ *   import { createEngineRegistry } from './engines/registry';   // ✅ P0-3/TRA-4 已交付
  *   import { getConfig } from './config/config-store';           // P0-11
  *
  * 具体导出名以 Stage 2 各 issue 实现为准；只要满足 orchestrator.ts 的 DI 接口
