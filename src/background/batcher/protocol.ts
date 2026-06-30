@@ -21,6 +21,36 @@ import type { Batch, BatchItem, TranslationItem } from './types';
 /** Default degradation chunk size: 20 items → 4×5 (ARCHITECTURE.md §4.6). */
 export const DEGRADE_CHUNK_SIZE = 5;
 
+/**
+ * The six immutable batch-protocol rules (ARCHITECTURE.md §4.3). These are the
+ * contract that makes the JSON id-alignment + `[[n]]` verbatim scheme work, so
+ * they MUST appear in every system prompt — basic AND agent. Extracted so the
+ * agent prompt-builder (src/background/agent/prompt-builder.ts) can re-use them
+ * verbatim instead of duplicating the strings (drift here would break alignment).
+ */
+export const BASE_TRANSLATOR_RULES: readonly string[] = [
+  '1. Output ONLY valid JSON, no markdown, no explanation.',
+  '2. Output schema: {"items":[{"id":string,"text":string}]}.',
+  '3. Keep every "id" from the input unchanged. Return exactly one translation per input id.',
+  '4. Preserve inline markup placeholders like [[0]], [[1]] verbatim — do not translate, reorder, or delete them.',
+  '5. Do not merge or split items. One input id → one output id.',
+  '6. If an item is code/URL/untranslatable, return it unchanged in "text".',
+];
+
+/** The default translator intro line (basic mode). */
+export function baseTranslatorIntro(targetLang: string): string {
+  return `You are a professional translator. Translate the user-provided text into ${targetLang}.`;
+}
+
+/** Stable djb2 fingerprint of an arbitrary string (used for prompt cache keys). */
+export function fingerprintString(s: string): string {
+  let hash = 5381;
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) + hash + s.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
 /** Outcome of parsing a raw LLM response. */
 export type ParseOutcome =
   | { ok: true; items: TranslationItem[] }
@@ -45,22 +75,9 @@ export interface AlignResult {
  */
 export function buildSystemPrompt(ctx: PromptContext): string {
   const lines: string[] = [];
-  lines.push(
-    `You are a professional translator. Translate the user-provided text into ${ctx.targetLang}.`,
-  );
+  lines.push(baseTranslatorIntro(ctx.targetLang));
   lines.push('Rules:');
-  lines.push('1. Output ONLY valid JSON, no markdown, no explanation.');
-  lines.push('2. Output schema: {"items":[{"id":string,"text":string}]}.');
-  lines.push(
-    '3. Keep every "id" from the input unchanged. Return exactly one translation per input id.',
-  );
-  lines.push(
-    '4. Preserve inline markup placeholders like [[0]], [[1]] verbatim — do not translate, reorder, or delete them.',
-  );
-  lines.push('5. Do not merge or split items. One input id → one output id.');
-  lines.push(
-    '6. If an item is code/URL/untranslatable, return it unchanged in "text".',
-  );
+  lines.push(...BASE_TRANSLATOR_RULES);
 
   if (ctx.mode === 'agent' && ctx.agent) {
     lines.push('');
@@ -208,12 +225,7 @@ export function degradeBatch(batch: Batch, chunkSize?: number): Batch[] {
  * source text + engine id + target lang into its sha256 key.
  */
 export function promptFingerprint(ctx: PromptContext): string {
-  const prompt = buildSystemPrompt(ctx);
-  let hash = 5381;
-  for (let i = 0; i < prompt.length; i++) {
-    hash = ((hash << 5) + hash + prompt.charCodeAt(i)) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
+  return fingerprintString(buildSystemPrompt(ctx));
 }
 
 /** Parse a JSON string and normalize to translation items, or null if not usable. */

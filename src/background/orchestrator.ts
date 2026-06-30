@@ -160,8 +160,29 @@ export interface OrchestratorDeps {
   scheduler: Scheduler;
   retry: Retry;
   cache: Cache;
+  /**
+   * 智能体模式批量执行器（P1-1）。仅当 ctx.mode === 'agent' 时启用：把单批的
+   * 「agent 尝试 + 质量回退到基础模式」决策委托给它（runAgentBatch）。缺省/基础
+   * 模式下走原有 callEngine → handleResult → degrade 路径，零回归。
+   */
+  agentRunner?: AgentBatchRunner;
   /** 进度广播给 popup（一次性消息 STATUS，架构 2.2 / 任务 #3）。由 port-server 绑定 tabId。 */
   broadcastStatus: (tabId: number, state: TabTranslationState, progress: number) => void;
+}
+
+/**
+ * 智能体模式批量执行器产物（P1-1）。translated 为 agent+basic 回退并集；
+ * failedIds 为两轮仍未得到的段；fallbackReason 为触发基础模式回退的原因。
+ */
+export interface AgentBatchOutcome {
+  translated: Map<string, string>;
+  failedIds: string[];
+  fallbackReason?: 'parse_error' | 'empty_result' | 'alignment_failure';
+}
+
+/** 智能体模式批量执行器接口（由 runtime-deps 用 runAgentBatch 实现）。 */
+export interface AgentBatchRunner {
+  run(batch: Batch, ctx: TranslateContext, signal: AbortSignal): Promise<AgentBatchOutcome>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -396,6 +417,42 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
             return;
           }
           for (const it of batch.items) emit({ type: 'PROGRESS', id: it.id, status: 'translating' });
+
+          // ── 智能体模式路径（P1-1）：委托 agentRunner 跑 agent 尝试 + 基础模式回退 ──
+          // 仅 mode==='agent' 且注入了 agentRunner 时启用；否则走下方基础路径（零回归）。
+          if (ctx.mode === 'agent' && deps.agentRunner) {
+            try {
+              const outcome = await deps.agentRunner.run(batch, ctx, abort.signal);
+              if (abort.signal.aborted) {
+                for (const it of batch.items) emitSkipped(it.id);
+                return;
+              }
+              for (const it of batch.items) {
+                const t = outcome.translated.get(it.id);
+                if (t !== undefined) {
+                  writeCache(it.text, t);
+                  emitResult(it.id, t);
+                } else {
+                  emitError(
+                    it.id,
+                    outcome.fallbackReason
+                      ? `agent fallback (${outcome.fallbackReason}) exhausted`
+                      : 'no translation',
+                  );
+                }
+              }
+            } catch (err) {
+              if (isAbortError(err) || abort.signal.aborted) {
+                for (const it of batch.items) emitSkipped(it.id);
+                return;
+              }
+              // 引擎错（非中止，如重试耗尽 / context length）→ 标记该批段失败，不阻塞其他批。
+              const reason = err instanceof Error ? err.message : String(err);
+              for (const it of batch.items) emitError(it.id, reason);
+            }
+            return;
+          }
+
           const raw = await callEngine(batch);
           if (abort.signal.aborted) {
             for (const it of batch.items) emitSkipped(it.id);

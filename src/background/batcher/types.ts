@@ -44,11 +44,11 @@ export interface TokenBudget {
 
 // ── Prompt context (protocol layer) ─────────────────────────────────────────
 
-/** A single source→target term the model must follow (agent/expert mode). */
-export interface GlossaryPair {
-  src: string;
-  tgt: string;
-}
+/** A single source→target term the model must follow (agent/expert mode).
+ *  规范定义在 src/types/agent.ts（智能体契约单一来源），此处 import 供本模块使用并
+ *  re-export 保持既有导入路径稳定。 */
+import type { GlossaryPair } from '../../types/agent';
+export type { GlossaryPair };
 
 /** Agent/expert mode prompt additions (P1 surface; wired now as the extension
  *  point on buildSystemPrompt). All fields optional. */

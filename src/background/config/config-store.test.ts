@@ -7,6 +7,7 @@ import {
   getDefaultConfig,
   getEngineApiKey,
   loadConfig,
+  normalizeConfig,
   normalizeScheduling,
   patchConfig,
   removeEngine,
@@ -82,6 +83,58 @@ describe('config-store（配置读写，架构 6.2）', () => {
       expect(c.targetLang).toBe('fr');
       expect(c.scheduling.maxConcurrent).toBe(5);
       expect(c.scheduling.rps).toBe(2); // 未改字段保留默认
+    });
+  });
+
+  describe('智能体模式开关 + AgentConfig（P1-1，架构 6.2）', () => {
+    it('默认 mode=basic，agent 字段齐全且为安全默认', () => {
+      const c = getDefaultConfig();
+      expect(c.mode).toBe('basic');
+      expect(c.agent).toEqual({
+        systemPrompt: '',
+        role: '',
+        stylePreset: 'none',
+        glossaryIds: [],
+        pageContextEnabled: false,
+      });
+    });
+
+    it('patchConfig 切换 agentMode 开关 + 局部合并 agent 字段', async () => {
+      await patchConfig({
+        mode: 'agent',
+        agent: { role: '法律译者', stylePreset: 'literary', glossaryIds: ['g1'] },
+      });
+      const c = await loadConfig();
+      expect(c.mode).toBe('agent');
+      expect(c.agent.role).toBe('法律译者');
+      expect(c.agent.stylePreset).toBe('literary');
+      expect(c.agent.glossaryIds).toEqual(['g1']);
+      // 未改字段保留默认
+      expect(c.agent.systemPrompt).toBe('');
+      expect(c.agent.pageContextEnabled).toBe(false);
+    });
+
+    it('normalizeConfig 容错非法 agent 字段（非法 stylePreset 回退 none、glossaryIds 过滤非字符串）', () => {
+      const c = normalizeConfig({
+        mode: 'agent',
+        agent: {
+          systemPrompt: '自定义',
+          role: 'r',
+          stylePreset: 'bogus',
+          glossaryIds: ['g1', 9 as unknown as string, null as unknown as string],
+          pageContextEnabled: 'yes' as unknown as boolean,
+        },
+      });
+      expect(c.mode).toBe('agent');
+      expect(c.agent.systemPrompt).toBe('自定义');
+      expect(c.agent.stylePreset).toBe('none');
+      expect(c.agent.glossaryIds).toEqual(['g1']);
+      expect(c.agent.pageContextEnabled).toBe(false);
+    });
+
+    it('normalizeConfig 非法 mode 回退 basic（开关默认关闭，零回归）', () => {
+      const c = normalizeConfig({ mode: 'weird' as unknown as string });
+      expect(c.mode).toBe('basic');
     });
   });
 
