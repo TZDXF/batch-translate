@@ -11,7 +11,7 @@
 const manifest = {
   manifest_version: 3,
   name: 'BatchTranslate',
-  version: '0.1.0',
+  version: '1.0.0',
   description: '浏览器 AI 双语对照翻译扩展：批量合并降并发 + 自带 Key 任意 LLM + 本地缓存 + 纯本地隐私',
 
   // ── 权限（架构 7.2.4 最小化） ──────────────────────────────────────────
