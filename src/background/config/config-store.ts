@@ -131,10 +131,16 @@ export function normalizeConfig(raw: unknown): AppConfig {
   }
 
   const agentSrc = (typeof r['agent'] === 'object' && r['agent'] !== null ? r['agent'] : {}) as Record<string, unknown>;
+  // stylePreset 仅接受已知枚举值，非法值回退 'none'（schema 校验，P1-1）。
+  const rawStyle = typeof agentSrc['stylePreset'] === 'string' ? agentSrc['stylePreset'] : 'none';
+  const stylePreset: AgentConfig['stylePreset'] =
+    rawStyle === 'literary' || rawStyle === 'technical' || rawStyle === 'casual' || rawStyle === 'none'
+      ? rawStyle
+      : 'none';
   const agent: AgentConfig = {
     systemPrompt: typeof agentSrc['systemPrompt'] === 'string' ? agentSrc['systemPrompt'] : def.agent.systemPrompt,
     role: typeof agentSrc['role'] === 'string' ? agentSrc['role'] : def.agent.role,
-    stylePreset: (typeof agentSrc['stylePreset'] === 'string' ? agentSrc['stylePreset'] : 'none') as AgentConfig['stylePreset'],
+    stylePreset,
     glossaryIds: Array.isArray(agentSrc['glossaryIds']) ? (agentSrc['glossaryIds'] as string[]).filter((x) => typeof x === 'string') : [],
     pageContextEnabled: typeof agentSrc['pageContextEnabled'] === 'boolean' ? agentSrc['pageContextEnabled'] : false,
   };

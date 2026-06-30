@@ -396,3 +396,136 @@ describe('orchestrator translateBatch', () => {
     expect(lastStatus(s.statusCalls)).toEqual([1, 'done', 1]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 智能体模式路径（P1-1）：mode==='agent' 且注入 agentRunner 时委托回退决策
+// ═══════════════════════════════════════════════════════════════════════════
+
+import type { AgentBatchRunner, AgentBatchOutcome } from '../orchestrator';
+
+function setupWithAgent(
+  agentRunner: AgentBatchRunner,
+  responder: Responder = () => jsonResponse([]),
+): Setup & { agentCalls: number } {
+  const protocol = makeProtocol();
+  const packer = makePacker();
+  const sched = makeScheduler();
+  const retry = makeRetry();
+  const cache = makeCache();
+  const statusCalls: Array<[number, TabTranslationState, number]> = [];
+  const broadcastStatus = (tabId: number, state: TabTranslationState, progress: number) =>
+    statusCalls.push([tabId, state, progress]);
+  const { engine, calls } = makeEngine(responder);
+  const deps: OrchestratorDeps = {
+    protocol,
+    packer,
+    scheduler: sched.impl,
+    retry: retry.impl,
+    cache: cache.impl,
+    agentRunner,
+    broadcastStatus,
+  };
+  const orchestrator = createOrchestrator(deps);
+  return { orchestrator, deps, cache, sched, statusCalls, engine, engineCalls: calls, agentCalls: 0 };
+}
+
+describe('orchestrator agent-mode path (P1-1)', () => {
+  it('agent 全量成功：走 agentRunner，不调引擎，逐段回填 + 写缓存 + done', async () => {
+    const runner: AgentBatchRunner = {
+      async run(batch): Promise<AgentBatchOutcome> {
+        return {
+          translated: new Map(batch.items.map((it) => [it.id, `译-${it.id}`])),
+          failedIds: [],
+        };
+      },
+    };
+    const s = setupWithAgent(runner);
+    const { port, messages } = makePort();
+
+    await s.orchestrator.translateBatch(
+      items(3),
+      makeCtx(s.engine, { mode: 'agent' }),
+      port,
+    );
+
+    // 引擎（基础路径）未被调用 —— agentRunner 接管
+    expect(s.engineCalls).toHaveLength(0);
+    const results = resultsOf(messages);
+    expect(results.map((r) => r.id).sort()).toEqual(['1', '2', '3']);
+    expect(results.every((r) => r.translated.startsWith('译-'))).toBe(true);
+    // 写缓存
+    expect(s.cache.store.size).toBe(3);
+    expect(errorsOf(messages)).toHaveLength(0);
+    expect(lastStatus(s.statusCalls)).toEqual([1, 'done', 1]);
+  });
+
+  it('agent 部分失败：failedIds 段回 ERROR，成功段回 RESULT', async () => {
+    const runner: AgentBatchRunner = {
+      async run(batch): Promise<AgentBatchOutcome> {
+        const translated = new Map<string, string>();
+        const failedIds: string[] = [];
+        for (const it of batch.items) {
+          if (it.id === '2') failedIds.push(it.id);
+          else translated.set(it.id, `译-${it.id}`);
+        }
+        return { translated, failedIds, fallbackReason: 'alignment_failure' };
+      },
+    };
+    const s = setupWithAgent(runner);
+    const { port, messages } = makePort();
+
+    await s.orchestrator.translateBatch(
+      items(3),
+      makeCtx(s.engine, { mode: 'agent' }),
+      port,
+    );
+
+    const results = resultsOf(messages).map((r) => r.id).sort();
+    expect(results).toEqual(['1', '3']);
+    const errors = errorsOf(messages);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.id).toBe('2');
+    expect(errors[0]?.reason).toContain('alignment_failure');
+  });
+
+  it('agentRunner 抛错（非中止）：该批段回 ERROR，不阻塞收尾', async () => {
+    const runner: AgentBatchRunner = {
+      async run(): Promise<AgentBatchOutcome> {
+        throw new Error('engine down');
+      },
+    };
+    const s = setupWithAgent(runner);
+    const { port, messages } = makePort();
+
+    await s.orchestrator.translateBatch(
+      items(2),
+      makeCtx(s.engine, { mode: 'agent' }),
+      port,
+    );
+
+    const errors = errorsOf(messages);
+    expect(errors.map((e) => e.id).sort()).toEqual(['1', '2']);
+    expect(errors.every((e) => e.reason === 'engine down')).toBe(true);
+    // 调度槽位释放平衡
+    expect(s.sched.acquireCalls).toHaveLength(s.sched.getReleaseCount());
+    expect(s.orchestrator.isActive(1)).toBe(false);
+  });
+
+  it('零回归：mode==="basic" 时即使注入了 agentRunner 也走基础路径（调引擎）', async () => {
+    let runnerCalled = 0;
+    const runner: AgentBatchRunner = {
+      async run(): Promise<AgentBatchOutcome> {
+        runnerCalled++;
+        return { translated: new Map(), failedIds: [] };
+      },
+    };
+    const s = setupWithAgent(runner, (ids) => jsonResponse(ids.map((id) => [id, `译-${id}`])));
+    const { port, messages } = makePort();
+
+    await s.orchestrator.translateBatch(items(3), makeCtx(s.engine), port); // mode 默认 basic
+
+    expect(runnerCalled).toBe(0); // agentRunner 未启用
+    expect(s.engineCalls).toHaveLength(1); // 走基础路径调引擎
+    expect(resultsOf(messages).map((r) => r.id).sort()).toEqual(['1', '2', '3']);
+  });
+});
