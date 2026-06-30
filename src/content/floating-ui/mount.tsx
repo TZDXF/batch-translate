@@ -17,6 +17,7 @@ let current: ControlBarState = {
   engineLabel: '未配置引擎',
   baseUrl: '',
   error: null,
+  blocked: null,
 };
 let toggleHandler: () => void = () => {};
 
@@ -70,6 +71,7 @@ export function __resetControlBarForTests(): void {
     engineLabel: '未配置引擎',
     baseUrl: '',
     error: null,
+    blocked: null,
   };
   toggleHandler = () => {};
 }

@@ -121,7 +121,32 @@ export interface UIConfig {
   showOriginal: boolean;
   translationStyle: string;
   hoverOnly: boolean;
+  /**
+   * 三态显示模式（P1-3 快捷键切换）。showOriginal 为向后兼容的布尔投影；
+   * 新逻辑以 displayMode 为准，cycleDisplayMode 在 bilingual→translation→original 间循环。
+   */
+  displayMode: DisplayMode;
 }
+
+/**
+ * 按域名开关 / 翻译白名单（P1-3）。content script 启动时按当前域名决定是否允许翻译。
+ * - blacklist（默认）：黑名单域名不译，其余译。
+ * - whitelist：仅白名单域名译，其余不译。
+ * 域名匹配为纯函数（domain-policy.ts），便于 vitest 覆盖。
+ */
+export interface DomainPolicy {
+  mode: 'blacklist' | 'whitelist';
+  /** 黑名单域名列表（mode=blacklist 时生效）。 */
+  blacklist: string[];
+  /** 白名单域名列表（mode=whitelist 时生效）。 */
+  whitelist: string[];
+}
+
+/** 快捷键动作枚举（P1-3）。 */
+export type ShortcutAction = 'toggle' | 'cycleDisplayMode' | 'retranslate';
+
+/** 快捷键映射：动作 → 加速器字符串（如 "Alt+Shift+T"）。 */
+export type Shortcuts = Record<ShortcutAction, string>;
 
 /** 完整配置根（storage.local `config` 键）。见架构 6.2。 */
 export interface AppConfig {
@@ -135,6 +160,8 @@ export interface AppConfig {
   scheduling: SchedulingConfig;
   cache: CacheConfig;
   ui: UIConfig;
+  domain: DomainPolicy;
+  shortcuts: Shortcuts;
 }
 
 /**

@@ -3,6 +3,7 @@ export {
   cacheKeyFrom,
   type CacheKeyInput,
 } from './cache-key';
+export { syncCacheKey } from './sync-cache-key';
 export {
   CacheStore,
   type CacheEntry,

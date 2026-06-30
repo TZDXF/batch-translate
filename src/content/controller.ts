@@ -13,22 +13,27 @@ import {
   isProgress,
   isResult,
 } from '../shared/messages';
-import type { Item, Paragraph } from '../shared/types';
+import type { DisplayMode, Item, Paragraph } from '../shared/types';
 import { extract } from './extractor/dom-walker';
 import { restore, serialize } from './extractor/inline-markup';
 import type { Placeholder } from '../shared/types';
 import { ParagraphRegistry } from './paragraph-registry';
-import { render, type RenderHandle } from './renderer/bilingual-renderer';
+import { render, type RenderActions, type RenderHandle } from './renderer/bilingual-renderer';
 import { LayoutGuard } from './renderer/layout-guard';
 import { loadConfig } from '../background/config/config-store';
 import { updateControlBar } from './floating-ui/mount';
+import { evictCache, writebackCache } from './cache-access';
 
 let tabId: number | null = null;
 let port: chrome.runtime.Port | null = null;
 let on = false;
 let doneCount = 0;
 let total = 0;
-let lastConfigUi: { showOriginal: boolean; translationStyle: string } | null = null;
+let lastConfigUi: { showOriginal: boolean; translationStyle: string; displayMode: DisplayMode } | null = null;
+/** 当前显示模式（快捷键 cycleDisplayMode 切换，运行态镜像 config.ui.displayMode）。 */
+let displayMode: DisplayMode = 'bilingual';
+/** 最近悬停的段落 id —— 重译快捷键的目标（无鼠标时回退到首个已渲染段）。 */
+let lastHoveredId: string | null = null;
 
 const registry = new ParagraphRegistry();
 const layoutGuard = new LayoutGuard();
@@ -77,7 +82,8 @@ export async function startTranslation(tid: number): Promise<void> {
   // 拉一次 UI 配置（显示模式 / 样式预设）供渲染使用。
   try {
     const cfg = await loadConfig();
-    lastConfigUi = { showOriginal: cfg.ui.showOriginal, translationStyle: cfg.ui.translationStyle };
+    displayMode = cfg.ui.displayMode;
+    lastConfigUi = { showOriginal: cfg.ui.showOriginal, translationStyle: cfg.ui.translationStyle, displayMode: cfg.ui.displayMode };
   } catch {
     lastConfigUi = null;
   }
@@ -157,12 +163,19 @@ function applyResult(id: string, translated: string): void {
     text: entry.sourceText,
     node: entry.node,
   };
-  const displayMode = lastConfigUi?.showOriginal === false ? 'translation' : 'bilingual';
+  const mode = displayMode;
   const style = (lastConfigUi?.translationStyle as 'normal' | 'blur' | 'underline' | 'highlight' | undefined) ?? 'normal';
-  const handle = render(paragraph, translated, { displayMode, style, restoreMarkup: restorer });
+  const actions: RenderActions = {
+    retranslate: () => { void retranslateParagraph(id); },
+    edit: (t: string) => { void onEditTranslation(id, t); },
+    copy: () => onCopyTranslation(id),
+  };
+  const handle = render(paragraph, translated, { displayMode: mode, style, restoreMarkup: restorer, actions });
   handles.set(id, handle);
   registry.setWrapper(id, handle.wrapper);
   registry.setStatus(id, 'translated');
+  // 悬停记录：重译快捷键的目标段。
+  handle.wrapper.addEventListener('mouseenter', () => { lastHoveredId = id; });
   // 防重排：页面 JS 删除/移动 wrapper 时自动重插。
   layoutGuard.watch(id, entry.node, handle.wrapper, handle.target);
 }
@@ -191,6 +204,89 @@ function applyError(id: string, reason: string): void {
   handle.markError(reason);
   handles.set(id, handle);
   registry.setStatus(id, 'error', reason);
+}
+
+/**
+ * 手动重译单段（P1-3）：先逐出该段缓存 → 经 Port 单发 TRANSLATE_BATCH（batch=1 由 packer
+ * 自然成批）→ orchestrator 缓存 miss 强制重发 → 成功后 orchestrator 自动回写缓存。
+ * 需要翻译已开启（Port 在线）；未开启时提示用户先开启。
+ */
+export async function retranslateParagraph(id: string): Promise<void> {
+  const entry = registry.get(id);
+  if (!entry) return;
+  if (!port || !on) {
+    updateControlBar({ error: '请先开启翻译后再重译' });
+    return;
+  }
+  try {
+    const cfg = await loadConfig();
+    await evictCache(entry.sourceText, cfg);
+  } catch {
+    /* 缓存逐出失败不阻塞重译 */
+  }
+  // 清掉可能的错误占位，标记翻译中。
+  handles.get(id)?.clearError();
+  registry.setStatus(id, 'translating');
+  updateControlBar({ state: 'translating', error: null });
+  port.postMessage({ type: 'TRANSLATE_BATCH', items: [{ id, text: entry.sourceText }] });
+}
+
+/** 重译「当前段」：优先最近悬停段，回退首个已渲染段。 */
+export async function retranslateCurrent(): Promise<void> {
+  const id = lastHoveredId ?? [...handles.keys()][0];
+  if (!id) return;
+  await retranslateParagraph(id);
+}
+
+/**
+ * 编辑译文回写缓存（P1-3）：用户在编辑态保存新译文 → 立即更新 wrapper 显示 →
+ * 回写 IndexedDB 覆盖该段 cache entry（复用 P0-6 cache-key 契约）。
+ * 二次访问该段时 orchestrator 命中被覆盖的缓存值（验收项）。
+ */
+export async function onEditTranslation(id: string, newText: string): Promise<void> {
+  const entry = registry.get(id);
+  const handle = handles.get(id);
+  if (handle) handle.setText(newText);
+  if (!entry) return;
+  try {
+    const cfg = await loadConfig();
+    await writebackCache(entry.sourceText, newText, cfg);
+  } catch {
+    /* 回写失败不影响本地显示，仅缓存未更新 */
+  }
+}
+
+/** 复制译文到剪贴板。 */
+export function onCopyTranslation(id: string): void {
+  const handle = handles.get(id);
+  const text = handle?.getText() ?? '';
+  try {
+    void navigator.clipboard?.writeText(text);
+  } catch {
+    /* 剪贴板不可用时静默 */
+  }
+}
+
+/** 当前显示模式（快捷键展示 / content 入口用）。 */
+export function getDisplayMode(): DisplayMode {
+  return displayMode;
+}
+
+/**
+ * 循环切换显示模式（原文 / 译文 / 双显，P1-3 快捷键）：bilingual → translation → original → bilingual。
+ * 立即应用到全部已渲染 wrapper，并持久化到 config.ui.displayMode 供下次进入页面沿用。
+ */
+export async function cycleDisplayMode(): Promise<void> {
+  const next: DisplayMode =
+    displayMode === 'bilingual' ? 'translation' : displayMode === 'translation' ? 'original' : 'bilingual';
+  displayMode = next;
+  for (const handle of handles.values()) handle.setDisplayMode(next);
+  try {
+    const { patchConfig } = await import('../background/config/config-store');
+    await patchConfig({ ui: { displayMode: next } });
+  } catch {
+    /* 持久化失败不影响本次切换 */
+  }
 }
 
 function onPortMessage(m: unknown): void {

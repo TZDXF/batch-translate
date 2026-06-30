@@ -114,7 +114,7 @@ function App() {
             onChange={(e) => void send({ type: 'SWITCH_MODE', mode: e.currentTarget.value as TranslateMode })}
           >
             <option value="basic">基础</option>
-            <option value="agent" disabled>智能体 (P1)</option>
+            <option value="agent">智能体</option>
           </select>
         </div>
       </div>

@@ -2,7 +2,7 @@
  * BatchTranslate 共享常量 —— 引擎 provider 枚举、默认调度参数、命名约定。
  * 值对齐 docs/ARCHITECTURE.md 第 2.2、5.2、5.3、6.1 节。
  */
-import type { EngineProvider, SchedulingConfig } from './types';
+import type { EngineProvider, SchedulingConfig, Shortcuts } from './types';
 
 /** 运行时引擎 provider 列表（与 EngineProvider 类型一一对应）。 */
 export const ENGINE_PROVIDERS: readonly EngineProvider[] = [
@@ -30,6 +30,14 @@ export const DEFAULT_SCHEDULING: Readonly<SchedulingConfig> = {
   maxRetries: DEFAULT_MAX_RETRIES,
   itemsPerBatch: MAX_ITEMS_PER_BATCH,
   batchTokenBudgetRatio: DEFAULT_BATCH_TOKEN_BUDGET_RATIO,
+};
+
+// ─── 快捷键默认值（P1-3，架构 P1 路线图） ─────────────────────────────────
+/** 默认快捷键映射。Alt 系前缀避免与浏览器/网页常用快捷键冲突。 */
+export const DEFAULT_SHORTCUTS: Readonly<Shortcuts> = {
+  toggle: 'Alt+Shift+T',
+  cycleDisplayMode: 'Alt+Shift+D',
+  retranslate: 'Alt+Shift+R',
 };
 
 // ─── 退避（架构 5.2） ─────────────────────────────────────────────────────

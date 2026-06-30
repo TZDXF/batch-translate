@@ -46,6 +46,49 @@ describe('config-store（配置读写，架构 6.2）', () => {
       expect(c).toEqual(getDefaultConfig());
     });
 
+    it('默认 schema 含 P1-3 domain / shortcuts / ui.displayMode', () => {
+      const c = getDefaultConfig();
+      expect(c.domain).toEqual({ mode: 'blacklist', blacklist: [], whitelist: [] });
+      expect(c.shortcuts.toggle).toBe('Alt+Shift+T');
+      expect(c.ui.displayMode).toBe('bilingual');
+    });
+
+    it('normalizeConfig 容错：旧配置无 domain/shortcuts/displayMode 时补默认', async () => {
+      // 模拟旧版配置（无 P1-3 字段）落盘后加载。
+      const legacy = getDefaultConfig() as unknown as Record<string, unknown>;
+      const legacyUi = { ...(legacy.ui as Record<string, unknown>) };
+      delete legacyUi.displayMode;
+      legacy.ui = legacyUi;
+      delete legacy.domain;
+      delete legacy.shortcuts;
+      mock._store.set(STORAGE_KEY_CONFIG, legacy);
+
+      const c = await loadConfig();
+      expect(c.domain.mode).toBe('blacklist');
+      expect(c.shortcuts.retranslate).toBe('Alt+Shift+R');
+      expect(c.ui.displayMode).toBe('bilingual');
+    });
+
+    it('normalizeConfig：域名列表去重去空 + 小写 + 剥离 URL；空 shortcuts 回退默认', async () => {
+      const raw = {
+        version: 1,
+        engines: {},
+        activeEngineId: '',
+        targetLang: 'zh-CN',
+        sourceLang: 'auto',
+        mode: 'basic',
+        domain: { mode: 'whitelist', whitelist: ['Example.com', ' ', 'example.com', 'HTTPS://sub.x.com/p'] },
+        shortcuts: { toggle: 'ctrl', cycleDisplayMode: 'Alt+Shift+D', retranslate: '' },
+      };
+      mock._store.set(STORAGE_KEY_CONFIG, raw);
+      const c = await loadConfig();
+      expect(c.domain.whitelist).toEqual(['example.com', 'sub.x.com']);
+      // 非空快捷键原样保留（格式校验 / 冲突检测在 options UI 层）；空值回退默认。
+      expect(c.shortcuts.toggle).toBe('ctrl');
+      expect(c.shortcuts.retranslate).toBe('Alt+Shift+R'); // 空回退默认
+      expect(c.shortcuts.cycleDisplayMode).toBe('Alt+Shift+D');
+    });
+
     it('损坏数据 loadConfig 容错回退默认', async () => {
       mock._store.set(STORAGE_KEY_CONFIG, 'garbage');
       const c = await loadConfig();

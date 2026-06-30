@@ -9,6 +9,8 @@ export interface ControlBarState {
   engineLabel: string;
   baseUrl: string;
   error: string | null;
+  /** 域名策略禁用翻译（P1-3）：非空时禁用开关并展示原因。 */
+  blocked: string | null;
 }
 
 interface ControlBarProps {
@@ -27,13 +29,16 @@ const STATE_TEXT: Record<TabTranslationState, string> = {
 export function ControlBar({ state, onToggle }: ControlBarProps) {
   const pct = Math.round(state.progress * 100);
   const showProgress = state.on && (state.state === 'translating' || state.state === 'done');
+  const blocked = !!state.blocked;
   const btnClass = state.on ? 'bt-btn bt-off' : 'bt-btn';
 
   return (
     <div class="bt-bar">
-      <button class={btnClass} onClick={onToggle}>
+      <button class={btnClass} onClick={onToggle} disabled={blocked}>
         {state.on ? '■ 停止翻译' : '▶ 翻译本页'}
       </button>
+
+      {blocked && <div class="bt-blocked">{state.blocked}</div>}
 
       {showProgress && (
         <div class="bt-progress-wrap">
