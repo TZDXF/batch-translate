@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "idb": "^8.0.3"
+    "idb": "^8.0.3",
+    "gpt-tokenizer": "^3.4.0"
   },
   "devDependencies": {
     "fake-indexeddb": "^6.0.1",
