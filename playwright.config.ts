@@ -25,7 +25,10 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+      // 不设 channel: 'chrome'：稳定版 Chrome 禁用 --load-extension，
+      // 会导致扩展无法加载、SW 无法追踪（e2e 全 skip）。
+      // 用 Playwright 自带 Chromium（fixtures.ts 注释亦如是说）。
+      use: { ...devices['Desktop Chrome'] },
     },
   ],
 });
