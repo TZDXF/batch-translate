@@ -69,4 +69,10 @@ export interface PromptContext {
   mode?: 'basic' | 'agent';
   /** When mode === 'agent', the role/style/glossary/context additions. */
   agent?: AgentPromptContext;
+  /**
+   * 页面上下文（标题/前段摘要），基础模式注入 `Context:` 段（架构 §8 P1）。
+   * 智能体模式改走 `agent.pageContext`，此处不重复注入。由 orchestrator 在打包前调
+   * context-builder 产出，token 预算已从 batch inputMax 扣除。
+   */
+  pageContext?: string;
 }

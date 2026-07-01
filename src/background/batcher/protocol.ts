@@ -72,10 +72,21 @@ export interface AlignResult {
  * provided, the agent block (role / style / glossary / page context) is appended
  * — the P1 agent/expert hook, implemented now as plain string assembly so the
  * signature already accepts the extension point.
+ *
+ * Page context (§8 P1「页面上下文感知」)：基础模式也注入 `Context:` 段 —— `ctx.pageContext`
+ * 由 orchestrator 在打包前调 context-builder 产出（标题/前段摘要，token 预算已扣）。
+ * 智能体模式的 pageContext 走 `ctx.agent.pageContext`（buildAgentBlock 注入），二者不重复。
  */
 export function buildSystemPrompt(ctx: PromptContext): string {
   const lines: string[] = [];
   lines.push(baseTranslatorIntro(ctx.targetLang));
+
+  // 基础模式 pageContext 注入（智能体模式的 pageContext 在 buildAgentBlock 内处理，避免重复）。
+  const pageCtx = ctx.pageContext?.trim();
+  if (pageCtx && !(ctx.mode === 'agent' && ctx.agent)) {
+    lines.push(`Context: ${pageCtx}`);
+  }
+
   lines.push('Rules:');
   lines.push(...BASE_TRANSLATOR_RULES);
 

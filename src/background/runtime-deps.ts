@@ -182,7 +182,7 @@ export function buildPortServerDeps(mods: Stage2Modules): PortServerDeps {
     broadcastStatus: mods.broadcastStatus,
   });
 
-  const buildContext = async (tabId: number): Promise<TranslateContext> => {
+  const buildContext = async (tabId: number, pageTitle?: string): Promise<TranslateContext> => {
     const config = await mods.getConfig();
     const engineCfg = config.engines[config.activeEngineId];
     if (!engineCfg) {
@@ -199,6 +199,10 @@ export function buildPortServerDeps(mods: Stage2Modules): PortServerDeps {
       scheduling: config.scheduling,
       budget: computeBudget(engineCfg, config.scheduling),
       streaming: config.streaming.enabled,
+      // 页面上下文开关（架构 §8 P1）：仅当 agent.pageContextEnabled 开启时，
+      // orchestrator 才在打包前构建上下文。pageTitle 由 content 侧透传。
+      pageContextEnabled: config.agent.pageContextEnabled,
+      ...(pageTitle !== undefined ? { pageTitle } : {}),
     };
     if (config.mode === 'agent') ctx.agent = config.agent;
     return ctx;
@@ -226,7 +230,7 @@ function makeProtocol(): Protocol {
   return {
     buildSystemPrompt(ctx) {
       // 智能体模式用 prompt-builder 产出富提示词（角色/风格/术语/上下文 + 协议规则）；
-      // 基础模式走 protocol.buildSystemPrompt（零回归）。
+      // 基础模式走 protocol.buildSystemPrompt（零回归），并注入 pageContext（架构 §8 P1）。
       if (ctx.mode === 'agent' && ctx.agent) {
         return buildAgentSystemPrompt(toAgentPromptInput(ctx));
       }
@@ -234,6 +238,7 @@ function makeProtocol(): Protocol {
         targetLang: ctx.targetLang,
         sourceLang: ctx.sourceLang,
         mode: ctx.mode,
+        ...(ctx.pageContext ? { pageContext: ctx.pageContext } : {}),
       });
     },
     buildUserMessage(items) {
@@ -248,6 +253,7 @@ function makeProtocol(): Protocol {
         targetLang: ctx.targetLang,
         sourceLang: ctx.sourceLang,
         mode: ctx.mode,
+        ...(ctx.pageContext ? { pageContext: ctx.pageContext } : {}),
       });
     },
     parseResponse(raw, batch) {

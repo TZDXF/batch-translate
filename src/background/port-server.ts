@@ -41,8 +41,12 @@ export interface ChromeRuntimeLike {
 export interface PortServerDeps {
   /** 共享编排器实例（由 runtime-deps 注入，broadcastStatus 已在编排器内部接好）。 */
   orchestrator: Orchestrator;
-  /** 按当前 AppConfig 解析该 tab 的翻译上下文（活动引擎 / 调度参数 / 预算）。 */
-  buildContext: (tabId: number) => Promise<TranslateContext>;
+  /**
+   * 按当前 AppConfig 解析该 tab 的翻译上下文（活动引擎 / 调度参数 / 预算）。
+   * `pageTitle` 来自 content 侧 TRANSLATE_BATCH（document.title），供 orchestrator
+   * 构建页面上下文（架构 §8 P1）；未提供时为 undefined。
+   */
+  buildContext: (tabId: number, pageTitle?: string) => Promise<TranslateContext>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -88,7 +92,7 @@ export function initPortServer(deps: PortServerDeps, runtime: ChromeRuntimeLike)
       if (isTranslateBatch(msg)) {
         // 解析上下文后异步执行；结果/错误一律经 port 回传（RESULT/PROGRESS/ERROR/BATCH_DONE）。
         void deps
-          .buildContext(tabId)
+          .buildContext(tabId, msg.pageTitle)
           .then((ctx) => deps.orchestrator.translateBatch(msg.items, ctx, toOrchestratorPort(port)))
           .catch((err) => {
             // buildContext 失败（如配置缺失）→ 整批 ERROR 回传，不让 SW 崩。
