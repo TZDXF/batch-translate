@@ -2,6 +2,12 @@
 
 本项目变更记录。版本号遵循 [SemVer](https://semver.org/)。
 
+## [Unreleased]
+
+### 变更
+
+- **设置页改为独立网页**（TRA-30）：`options_ui.open_in_tab` 由 `false` 改为 `true`，设置页以整标签页（独立网页）打开，不再在 `chrome://extensions` 内以嵌入式弹窗呈现。通过 options 入口 HTML 的 `<meta name="manifest.openInTab" content="true" />` 声明（WXT 入口驱动字段）。
+
 ## [1.0.0] — 2026-06-30
 
 首个 MVP 发布。对标沉浸式翻译免费版痛点，交付浏览器 AI 双语翻译扩展核心能力。
