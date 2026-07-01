@@ -2,21 +2,28 @@
  * content script 入口（架构 3 节）：注入悬浮控制条、驱动 content 侧翻译编排。
  * matches <all_urls>，document_idle 注入；实际 host 权限由用户启用翻译时按域动态申请。
  *
+ * 两种翻译模式（P2-4 / TRA-27，config.ui.hoverOnly 切换）：
+ *  - 全页模式（默认）：控制条「翻译本页」批量翻译整页（controller.toggleTranslation）。
+ *  - hover 模式：鼠标悬停段落即时翻译该段（HoverController），轻量按需、低 token。
+ *  两种模式均受按域名策略（P1-3）约束，可与白名单组合。
+ *
  * P1-3 交互增强：
- *  - 按域名策略（黑名单 / 白名单）决定是否允许翻译；禁用域名挂载禁用态控制条（验收：黑名单域名不自动翻译）。
- *  - 全局快捷键：开关翻译 / 循环显示模式 / 重译当前段（options 可自定义，默认见 DEFAULT_SHORTCUTS）。
+ *  - 按域名策略（黑名单 / 白名单）决定是否允许翻译；禁用域名挂载禁用态控制条。
+ *  - 全局快捷键：开关翻译 / 循环显示模式 / 重译当前段。
  */
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { mountControlBar, updateControlBar } from '../content/floating-ui/mount';
-import { activeEngine, engineLabel, loadConfig } from '../background/config/config-store';
+import { activeEngine, engineLabel, loadConfig, subscribeToConfig } from '../background/config/config-store';
 import { isToggleTranslate } from '../shared/messages';
 import {
   cycleDisplayMode,
+  getMyTabId,
   isTranslating,
   retranslateCurrent,
   stopTranslation,
   toggleTranslation,
 } from '../content/controller';
+import { HoverController } from '../content/hover/hover-controller';
 import { isDomainAllowed, normalizeHostname } from '../content/domain-policy';
 import { acceleratorsEqual, eventToAccelerator } from '../content/shortcuts';
 import type { ShortcutAction } from '../shared/types';
@@ -25,7 +32,7 @@ export default defineContentScript({
   matches: ['<all_urls>'],
   runAt: 'document_idle',
   async main() {
-    const cfg = await loadConfig();
+    let cfg = await loadConfig();
     const eng = activeEngine(cfg);
     const host = normalizeHostname(location.hostname);
     const allowed = isDomainAllowed(host, cfg.domain);
@@ -43,6 +50,37 @@ export default defineContentScript({
         void toggleTranslation();
       },
     );
+
+    // hover 模式控制器（按需创建 / 销毁，随配置 ui.hoverOnly 切换）。
+    let hoverCtrl: HoverController | null = null;
+    const startHover = async (): Promise<void> => {
+      if (hoverCtrl) return;
+      hoverCtrl = new HoverController({
+        deps: { getTabId: getMyTabId, isFullPageTranslating: isTranslating },
+      });
+      await hoverCtrl.start();
+    };
+    const stopHover = (): void => {
+      hoverCtrl?.stop();
+      hoverCtrl = null;
+    };
+
+    // 按当前配置启用对应模式。
+    const applyMode = (hoverOnly: boolean): void => {
+      if (hoverOnly) {
+        if (!allowed) return; // 域名禁用时不启动 hover
+        void startHover();
+      } else {
+        stopHover();
+      }
+    };
+    applyMode(cfg.ui.hoverOnly);
+
+    // 配置变更（options/popup 切模式）→ 实时切换 hover / 全页。
+    const unsubConfig = subscribeToConfig((next) => {
+      cfg = next;
+      applyMode(next.ui.hoverOnly);
+    });
 
     // popup 开关 → SW → 中继 TOGGLE_TRANSLATE 到本 tab → 驱动 content 控制器（架构 2.2）。
     chrome.runtime.onMessage.addListener((msg) => {
@@ -77,5 +115,11 @@ export default defineContentScript({
         void retranslateCurrent();
       }
     });
+
+    // 页面卸载时清理 hover 控制器 + 配置订阅。
+    window.addEventListener('pagehide', () => {
+      stopHover();
+      unsubConfig();
+    }, { once: true });
   },
 });
