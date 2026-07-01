@@ -530,3 +530,120 @@ describe('orchestrator agent-mode path (P1-1)', () => {
     expect(resultsOf(messages).map((r) => r.id).sort()).toEqual(['1', '2', '3']);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 页面上下文感知（P1-延展-1 / TRA-23）：打包前构建上下文并注入 system prompt
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('orchestrator page-context (P1-延展-1)', () => {
+  it('pageContextEnabled + pageTitle：构建上下文并经 protocol.buildSystemPrompt 注入', async () => {
+    // 用 spy protocol 捕获 buildSystemPrompt 收到的 ctx.pageContext。
+    const base = makeProtocol();
+    const seenCtx: TranslateContext[] = [];
+    const protocol: Protocol = {
+      ...base,
+      buildSystemPrompt(ctx) {
+        seenCtx.push(ctx);
+        return base.buildSystemPrompt(ctx);
+      },
+      fingerprint(ctx) {
+        // 让 fingerprint 随 pageContext 变化（验证上下文计入缓存指纹）
+        return `${ctx.mode}|${ctx.pageContext ? 'ctx' : 'noctx'}`;
+      },
+    };
+    const packer = makePacker();
+    const sched = makeScheduler();
+    const retry = makeRetry();
+    const cache = makeCache();
+    const statusCalls: Array<[number, TabTranslationState, number]> = [];
+    const broadcastStatus = (tabId: number, state: TabTranslationState, progress: number) =>
+      statusCalls.push([tabId, state, progress]);
+    const { engine, calls } = makeEngine((ids) => jsonResponse(ids.map((id) => [id, `译-${id}`])));
+    const deps: OrchestratorDeps = {
+      protocol, packer, scheduler: sched.impl, retry: retry.impl, cache: cache.impl, broadcastStatus,
+    };
+    const orchestrator = createOrchestrator(deps);
+    const { port, messages } = makePort();
+
+    await orchestrator.translateBatch(
+      items(3),
+      makeCtx(engine, { pageContextEnabled: true, pageTitle: '我的页面标题' }),
+      port,
+    );
+
+    // buildSystemPrompt 被调用时 ctx.pageContext 已被填充（含 Title 行）
+    expect(seenCtx.length).toBeGreaterThan(0);
+    const ctx = seenCtx[0]!;
+    expect(ctx.pageContext).toBeTruthy();
+    expect(ctx.pageContext).toContain('Title: 我的页面标题');
+    // 三段全部回填
+    expect(resultsOf(messages).map((r) => r.id).sort()).toEqual(['1', '2', '3']);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('pageContextEnabled 关闭：不构建上下文，ctx.pageContext 保持 undefined（零回归）', async () => {
+    const base = makeProtocol();
+    const seenCtx: TranslateContext[] = [];
+    const protocol: Protocol = {
+      ...base,
+      buildSystemPrompt(ctx) { seenCtx.push(ctx); return base.buildSystemPrompt(ctx); },
+    };
+    const packer = makePacker();
+    const sched = makeScheduler();
+    const retry = makeRetry();
+    const cache = makeCache();
+    const statusCalls: Array<[number, TabTranslationState, number]> = [];
+    const broadcastStatus = (tabId: number, state: TabTranslationState, progress: number) =>
+      statusCalls.push([tabId, state, progress]);
+    const { engine } = makeEngine((ids) => jsonResponse(ids.map((id) => [id, `译-${id}`])));
+    const deps: OrchestratorDeps = {
+      protocol, packer, scheduler: sched.impl, retry: retry.impl, cache: cache.impl, broadcastStatus,
+    };
+    const orchestrator = createOrchestrator(deps);
+    const { port } = makePort();
+
+    await orchestrator.translateBatch(
+      items(2),
+      makeCtx(engine, { pageTitle: '有标题但开关关' }), // pageContextEnabled 未设
+      port,
+    );
+
+    expect(seenCtx[0]?.pageContext).toBeUndefined();
+  });
+
+  it('上下文 token 从打包预算扣除：pack 收到的 inputMax 小于原预算', async () => {
+    const base = makeProtocol();
+    const packerPackCalls: { inputMax: number }[] = [];
+    const packer: Packer = {
+      estimateTokens: (t) => t.length,
+      pack(items, budget) {
+        packerPackCalls.push({ inputMax: budget.inputMax });
+        return [{ id: 'bt-test-batch', items, tokenEstimate: items.reduce((s, it) => s + it.text.length, 0) }];
+      },
+    };
+    const sched = makeScheduler();
+    const retry = makeRetry();
+    const cache = makeCache();
+    const statusCalls: Array<[number, TabTranslationState, number]> = [];
+    const broadcastStatus = (tabId: number, state: TabTranslationState, progress: number) =>
+      statusCalls.push([tabId, state, progress]);
+    const { engine } = makeEngine((ids) => jsonResponse(ids.map((id) => [id, `译-${id}`])));
+    const deps: OrchestratorDeps = {
+      protocol: base, packer, scheduler: sched.impl, retry: retry.impl, cache: cache.impl, broadcastStatus,
+    };
+    const orchestrator = createOrchestrator(deps);
+    const { port } = makePort();
+
+    const inputMax = 4000;
+    await orchestrator.translateBatch(
+      items(2),
+      makeCtx(engine, { pageContextEnabled: true, pageTitle: '标题', budget: { inputMax } }),
+      port,
+    );
+
+    expect(packerPackCalls).toHaveLength(1);
+    // 上下文 token 已从 inputMax 扣除 → pack 收到更小预算
+    expect(packerPackCalls[0]!.inputMax).toBeLessThan(inputMax);
+    expect(packerPackCalls[0]!.inputMax).toBeGreaterThanOrEqual(1);
+  });
+});

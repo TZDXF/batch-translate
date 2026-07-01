@@ -127,7 +127,7 @@ export async function startTranslation(tid: number): Promise<void> {
     port = null;
     return;
   }
-  port.postMessage({ type: 'TRANSLATE_BATCH', items });
+  port.postMessage({ type: 'TRANSLATE_BATCH', items, pageTitle: document.title });
 }
 
 export async function stopTranslation(): Promise<void> {
@@ -246,7 +246,7 @@ export async function retranslateParagraph(id: string): Promise<void> {
   handles.get(id)?.clearError();
   registry.setStatus(id, 'translating');
   updateControlBar({ state: 'translating', error: null });
-  port.postMessage({ type: 'TRANSLATE_BATCH', items: [{ id, text: entry.sourceText }] });
+  port.postMessage({ type: 'TRANSLATE_BATCH', items: [{ id, text: entry.sourceText }], pageTitle: document.title });
 }
 
 /** 重译「当前段」：优先最近悬停段，回退首个已渲染段。 */

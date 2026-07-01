@@ -41,6 +41,7 @@ import {
   isStreamingEngine,
   type StreamingEngine,
 } from './engines/stream-adapter';
+import { buildPageContext, contextTokenBudget } from './agent/context-builder';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Stage 2 依赖契约（DI 接口）—— 签名对齐各 Stage 2 issue 验收标准
@@ -222,8 +223,16 @@ export interface TranslateContext {
   streaming: boolean;
   /** 可选页面 URL，仅写入缓存条目本地字段，不随请求外发（架构 7.3）。 */
   sourceUrl?: string;
-  /** 智能体模式页面上下文（标题/前段摘要，架构 4.3）。 */
+  /**
+   * 智能体模式页面上下文（标题/前段摘要，架构 4.3）。由 orchestrator 在打包前调
+   * context-builder 产出（若 pageContextEnabled 且尚未设置）；prompt-builder / 基础
+   * 模式 buildSystemPrompt 据此注入 `Context:` 段。
+   */
   pageContext?: string;
+  /** 页面标题（content 侧 document.title 经 TRANSLATE_BATCH 透传），供上下文构建。 */
+  pageTitle?: string;
+  /** 是否启用页面上下文注入（架构 §8 P1，对应 AgentConfig.pageContextEnabled）。 */
+  pageContextEnabled?: boolean;
 }
 
 /**
@@ -316,9 +325,33 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       const counters: Counters = { done: 0, failed: 0, total };
       let cancelled = false;
 
+      // ── 0. 页面上下文构建（架构 §8 P1，§4.3 Context 段）──────────────────
+      // pageContextEnabled 开启且 ctx.pageContext 尚未由上层预置时，在打包前用
+      // context-builder 产出上下文段（标题 + 前 N 段摘要，原文 hash 去重，token 预算
+      // 截断）。上下文进 system prompt（全批共用 → 每批都注入，保跨批一致性）。
+      // 上下文 token 从 batch inputMax 扣除，避免超窗口（架构 §4.5）。
+      if (ctx.pageContextEnabled && ctx.pageContext === undefined) {
+        const ctxBudget = contextTokenBudget(ctx.budget.inputMax);
+        if (ctxBudget > 0) {
+          const built = buildPageContext({
+            title: ctx.pageTitle,
+            priorSegments: items.map((it) => it.text),
+            tokenBudget: ctxBudget,
+            estimate: (t) => deps.packer.estimateTokens(t),
+          });
+          if (built.text) ctx.pageContext = built.text;
+        }
+      }
+
       // 提示词指纹与系统提示词全批共用，预先算一次（必须在调度前，供 callEngine/cache 使用）。
       const fingerprint = deps.protocol.fingerprint(ctx);
       const systemPrompt = deps.protocol.buildSystemPrompt(ctx);
+
+      // 上下文 token 从打包预算扣除（上下文在 system prompt 里，每批都占这份开销）。
+      const contextTokens = ctx.pageContext ? deps.packer.estimateTokens(ctx.pageContext) : 0;
+      const packBudget: TokenBudget = {
+        inputMax: Math.max(1, ctx.budget.inputMax - contextTokens),
+      };
 
       // port 断连视为取消：postMessage 失败时置位，停止后续回传与请求。
       let disconnected = false;
@@ -392,8 +425,8 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
         }
       }
 
-      // ── 2. 打包切批（架构 4.5）──────────────────────────────────────────
-      const batches = deps.packer.pack(misses, ctx.budget);
+      // ── 2. 打包切批（架构 4.5，预算已扣上下文开销）──────────────────────
+      const batches = deps.packer.pack(misses, packBudget);
 
       // ── 内部：单批调度（acquire → withRetry(engine) → 解析/对齐/降级） ───
       async function callEngine(batch: Batch): Promise<string> {

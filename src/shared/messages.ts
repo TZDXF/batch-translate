@@ -45,7 +45,7 @@ export type RuntimeMessage = ToSWMessages | FromSWMessages;
 
 /** content → SW（翻译主通道）。 */
 export type ContentToSMPortMessage =
-  | { type: 'TRANSLATE_BATCH'; items: Item[] }
+  | { type: 'TRANSLATE_BATCH'; items: Item[]; pageTitle?: string }
   | { type: 'CANCEL' };
 
 /** SW → content。 */

@@ -94,7 +94,7 @@ describe('port-server', () => {
     fp.onMessageListeners[0]?.({ type: 'TRANSLATE_BATCH', items }, fp.port);
     await flush();
 
-    expect(buildContext).toHaveBeenCalledWith(42);
+    expect(buildContext).toHaveBeenCalledWith(42, undefined);
     expect(translateBatchCalls).toHaveLength(1);
     expect(translateBatchCalls[0]?.ctx.tabId).toBe(42);
     expect(translateBatchCalls[0]?.items).toEqual(items);
