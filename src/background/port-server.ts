@@ -93,6 +93,11 @@ export function initPortServer(deps: PortServerDeps, runtime: ChromeRuntimeLike)
           .catch((err) => {
             // buildContext 失败（如配置缺失）→ 整批 ERROR 回传，不让 SW 崩。
             const reason = err instanceof Error ? err.message : String(err);
+            // 密钥库锁定（方案 b，TRA-22）：主密码已设但 SW 重启后未解锁 → 尽力弹出 popup
+            // 解锁（Chrome 127+ 支持 SW 内 openPopup；不可用则用户手动点工具栏图标解锁）。
+            if (err instanceof Error && err.name === 'LockedError') {
+              tryOpenPopupForUnlock();
+            }
             try {
               port.postMessage({ type: 'ERROR', id: '__batch__', reason });
             } catch {
@@ -112,4 +117,27 @@ export function initPortServer(deps: PortServerDeps, runtime: ChromeRuntimeLike)
     // chrome.runtime.onConnect.removeListener 在最小接口里未声明，故仅清表。
     activePorts.clear();
   };
+}
+
+/**
+ * 密钥库锁定时尽力弹出 popup 解锁（架构 7.2 方案 b，TRA-22）。
+ * chrome.action.openPopup 在 Chrome 127+ 可从 SW 调用；旧版本 / 无手势时拒绝，静默忽略。
+ * 用 name 比对而非导入 LockedError 类，避免 port-server 依赖 secret-store（保持解耦）。
+ */
+function tryOpenPopupForUnlock(): void {
+  const maybeChrome = globalThis as unknown as {
+    chrome?: { action?: { openPopup?: () => Promise<void> } };
+  };
+  const openPopup = maybeChrome.chrome?.action?.openPopup;
+  if (typeof openPopup !== 'function') return;
+  try {
+    const ret = openPopup.call(maybeChrome.chrome?.action);
+    if (ret && typeof (ret as Promise<void>).catch === 'function') {
+      (ret as Promise<void>).catch(() => {
+        /* 无手势 / 不支持：用户手动点工具栏图标解锁 */
+      });
+    }
+  } catch {
+    /* 静默 */
+  }
 }

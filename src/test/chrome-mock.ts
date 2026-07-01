@@ -7,8 +7,10 @@
 
 export interface ChromeMock {
   chrome: unknown;
-  /** 底层内存存储（测试断言用）。 */
+  /** 底层内存存储（local 区，测试断言用）。 */
   _store: Map<string, unknown>;
+  /** 底层内存存储（session 区，测试断言用）。 */
+  _sessionStore: Map<string, unknown>;
   /** 触发 storage.onChanged（模拟写盘广播）。 */
   _fireOnChanged: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, area: string) => void;
   /** 已发送的 runtime 消息记录。 */
@@ -18,6 +20,7 @@ export interface ChromeMock {
 
 export function createChromeMock(): ChromeMock {
   const store = new Map<string, unknown>();
+  const sessionStore = new Map<string, unknown>();
   const listeners = new Set<(changes: Record<string, unknown>, area: string) => void>();
   const sent: unknown[] = [];
 
@@ -28,43 +31,49 @@ export function createChromeMock(): ChromeMock {
     for (const fn of listeners) fn(changes, area);
   };
 
-  async function get(keys?: string | string[] | null): Promise<Record<string, unknown>> {
-    const out: Record<string, unknown> = {};
-    if (keys == null) {
-      for (const [k, v] of store) out[k] = v;
-    } else if (typeof keys === 'string') {
-      if (store.has(keys)) out[keys] = store.get(keys);
-    } else {
-      for (const k of keys) if (store.has(k)) out[k] = store.get(k);
-    }
-    return out;
-  }
-
-  async function set(items: Record<string, unknown>): Promise<void> {
-    const changes: Record<string, { oldValue?: unknown; newValue?: unknown }> = {};
-    for (const [k, v] of Object.entries(items)) {
-      const had = store.has(k);
-      changes[k] = { oldValue: had ? store.get(k) : undefined, newValue: v };
-      store.set(k, v);
-    }
-    fire(changes, 'local');
-  }
-
-  async function remove(keys: string | string[]): Promise<void> {
-    const ks = Array.isArray(keys) ? keys : [keys];
-    const changes: Record<string, { oldValue?: unknown; newValue?: unknown }> = {};
-    for (const k of ks) {
-      if (store.has(k)) {
-        changes[k] = { oldValue: store.get(k), newValue: undefined };
-        store.delete(k);
+  /** 通用 KV 存储区构造：local 与 session 共用同一份 get/set/remove 语义。 */
+  function makeArea(map: Map<string, unknown>, area: string) {
+    async function get(keys?: string | string[] | null): Promise<Record<string, unknown>> {
+      const out: Record<string, unknown> = {};
+      if (keys == null) {
+        for (const [k, v] of map) out[k] = v;
+      } else if (typeof keys === 'string') {
+        if (map.has(keys)) out[keys] = map.get(keys);
+      } else {
+        for (const k of keys) if (map.has(k)) out[k] = map.get(k);
       }
+      return out;
     }
-    fire(changes, 'local');
+
+    async function set(items: Record<string, unknown>): Promise<void> {
+      const changes: Record<string, { oldValue?: unknown; newValue?: unknown }> = {};
+      for (const [k, v] of Object.entries(items)) {
+        const had = map.has(k);
+        changes[k] = { oldValue: had ? map.get(k) : undefined, newValue: v };
+        map.set(k, v);
+      }
+      fire(changes, area);
+    }
+
+    async function remove(keys: string | string[]): Promise<void> {
+      const ks = Array.isArray(keys) ? keys : [keys];
+      const changes: Record<string, { oldValue?: unknown; newValue?: unknown }> = {};
+      for (const k of ks) {
+        if (map.has(k)) {
+          changes[k] = { oldValue: map.get(k), newValue: undefined };
+          map.delete(k);
+        }
+      }
+      fire(changes, area);
+    }
+
+    return { get, set, remove, clear: async () => map.clear() };
   }
 
   const chrome = {
     storage: {
-      local: { get, set, remove, clear: async () => store.clear() },
+      local: makeArea(store, 'local'),
+      session: makeArea(sessionStore, 'session'),
       onChanged: {
         addListener: (fn: (changes: Record<string, unknown>, area: string) => void) => listeners.add(fn),
         removeListener: (fn: (changes: Record<string, unknown>, area: string) => void) => listeners.delete(fn),
@@ -83,6 +92,7 @@ export function createChromeMock(): ChromeMock {
   return {
     chrome,
     _store: store,
+    _sessionStore: sessionStore,
     _fireOnChanged: fire,
     _sentMessages: sent,
     _listeners: listeners,

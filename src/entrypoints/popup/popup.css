@@ -114,6 +114,36 @@ input[type='number'] {
   font-size: 11px;
   color: #b91c1c;
 }
+.primary {
+  padding: 5px 12px;
+  border: 1px solid var(--bt-accent);
+  background: var(--bt-accent);
+  color: #fff;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+input[type='password'] {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--bt-border);
+  border-radius: 5px;
+  font-size: 12px;
+}
+.link-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--bt-accent);
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
 .link {
   display: block;
   text-align: right;

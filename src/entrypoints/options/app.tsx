@@ -12,6 +12,7 @@ import { EngineManager } from './engine-manager';
 import { DomainSection } from './domain-section';
 import { ShortcutsSection } from './shortcuts-section';
 import { AgentSection } from './agent-section';
+import { MasterPasswordSection } from './master-password-section';
 
 const LANGUAGES: ReadonlyArray<readonly [string, string]> = [
   ['zh-CN', '简体中文'],
@@ -45,6 +46,7 @@ export function App() {
 
       <EngineManager config={config} onChanged={() => {}} />
 
+      <MasterPasswordSection />
       <TranslationSection config={config} />
       <AgentSection config={config} />
       <SchedulingSection config={config} />
