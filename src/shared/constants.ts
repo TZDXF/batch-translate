@@ -96,5 +96,29 @@ export const RECOVERY_ALARM_PERIOD_MIN = 0.5;
 
 // ─── storage 键（架构 6.2） ───────────────────────────────────────────────
 export const STORAGE_KEY_CONFIG = 'config';
-/** 加密主密钥存储键（架构 7.2 方案 a）。 */
+/**
+ * 加密主密钥存储键。
+ * - 方案 a（P0）：随机 256-bit 主密钥 base64 存 storage.local（仅混淆）。
+ * - 方案 b（P1，TRA-22）：主密码 PBKDF2 派生主密钥，密码不落盘；此键仅保留作
+ *   迁移期存量方案 a 密钥的解密源，迁移完成后由 master-key.ts 删除。
+ */
 export const MASTER_KEY_STORAGE_KEY = '__mk';
+/** 方案 b：PBKDF2 salt（base64，随机 16 字节）存 storage.local 的键。 */
+export const MASTER_KEY_SALT_STORAGE_KEY = '__mk_salt';
+/** 方案 b：主密码校验值（派生密钥加密固定 token 的密文）存 storage.local 的键。 */
+export const MASTER_KEY_VERIFIER_STORAGE_KEY = '__mk_verifier';
+/** 方案 b：解锁态派生主密钥（base64 派生密钥材料）存 storage.session 的键。 */
+export const MASTER_KEY_SESSION_KEY = '__mk_session';
+
+// ─── PBKDF2 主密码派生参数（架构 7.2 方案 b，TRA-22） ─────────────────────
+/**
+ * PBKDF2 哈希算法。选用 SHA-512：OWASP Password Storage Cheat Sheet 当前建议
+ * PBKDF2-HMAC-SHA512 ≥ 210000 次迭代（与 issue 约定 ≥210000 一致）。
+ */
+export const PBKDF2_HASH_ALGO = 'SHA-512';
+/** PBKDF2 迭代次数（OWASP 2023+ 对 SHA-512 的下限建议）。 */
+export const PBKDF2_ITERATIONS = 210_000;
+/** PBKDF2 salt 字节长度（OWASP 建议 ≥64bit，取 128bit）。 */
+export const PBKDF2_SALT_LENGTH = 16;
+/** PBKDF2 派生密钥位数（AES-256 = 256bit）。 */
+export const PBKDF2_DERIVED_BITS = 256;

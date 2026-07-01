@@ -1,6 +1,9 @@
 /**
  * Popup（任务交付物 #2）：当前页翻译开关 / 进度 / 快速切引擎 / 切模式 /
  * 数据去向透明化 / 订阅 SW STATUS（架构 2.2、7.3）。
+ *
+ * 方案 b（TRA-22）：主密码已设置且 SW 未解锁时，先显示解锁界面；解锁后写 storage.session
+ * 解锁态，SW 即可解密 API Key。未设置主密码时跳过解锁，直接进主界面（零回归）。
  */
 import { useEffect, useState } from 'preact/hooks';
 import { render } from 'preact';
@@ -9,6 +12,13 @@ import type { AppConfig, TabTranslationState, TranslateMode } from '../../shared
 import type { FromSWMessages, ToSWMessages } from '../../shared/messages';
 import { isRuntimeMessage, isStatus } from '../../shared/messages';
 import { activeEngine, engineLabel, loadConfig } from '../../background/config/config-store';
+import {
+  isMasterPasswordConfigured,
+  isUnlocked,
+  lock as lockVault,
+  unlock as unlockVault,
+  WrongPasswordError,
+} from '../../background/secret/master-key';
 
 interface TabStatus {
   state: TabTranslationState;
@@ -19,8 +29,10 @@ function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [tabId, setTabId] = useState<number | null>(null);
   const [status, setStatus] = useState<TabStatus>({ state: 'idle', progress: 0 });
+  // null = 探测中；true = 需解锁；false = 已解锁或未设主密码。
+  const [needUnlock, setNeedUnlock] = useState<boolean | null>(null);
 
-  // 取当前激活 tab + 加载配置。
+  // 取当前激活 tab + 加载配置 + 探测解锁态。
   useEffect(() => {
     (async () => {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -31,6 +43,8 @@ function App() {
         const resp = (await chrome.runtime.sendMessage({ type: 'GET_STATUS', tabId: id } satisfies ToSWMessages)) as FromSWMessages | undefined;
         if (resp && isStatus(resp)) setStatus({ state: resp.state, progress: resp.progress });
       }
+      const configured = await isMasterPasswordConfigured();
+      setNeedUnlock(configured ? !(await isUnlocked()) : false);
     })().catch(() => setConfig(null));
   }, []);
 
@@ -51,6 +65,22 @@ function App() {
     } catch {
       /* SW 未就绪 */
     }
+  }
+
+  if (needUnlock === null) {
+    return (
+      <div>
+        <div class="head">
+          <h1>BatchTranslate</h1>
+          <div class="sub">双语对照 · 批量降并发 · 本地隐私</div>
+        </div>
+        <div class="section"><span class="state">加载中…</span></div>
+      </div>
+    );
+  }
+
+  if (needUnlock) {
+    return <UnlockView onUnlocked={() => setNeedUnlock(false)} />;
   }
 
   function onToggle() {
@@ -117,8 +147,64 @@ function App() {
             <option value="agent">智能体</option>
           </select>
         </div>
+        <div class="row">
+          <label>密钥库</label>
+          <span class="state">已解锁</span>
+          <button class="link-btn" onClick={async () => { await lockVault(); setNeedUnlock(true); }}>锁定</button>
+        </div>
       </div>
 
+      <a class="link" href="#" onClick={(e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); }}>
+        打开设置页 →
+      </a>
+    </div>
+  );
+}
+
+/** 方案 b 解锁界面：输入主密码 → 解锁写 storage.session。 */
+function UnlockView({ onUnlocked }: { onUnlocked: () => void }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: Event) {
+    e.preventDefault();
+    if (!password || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await unlockVault(password);
+      onUnlocked();
+    } catch (err) {
+      setError(err instanceof WrongPasswordError ? '主密码错误' : (err instanceof Error ? err.message : '解锁失败'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <div class="head">
+        <h1>BatchTranslate</h1>
+        <div class="sub">密钥库已锁定，输入主密码解锁</div>
+      </div>
+      <form class="section" onSubmit={onSubmit}>
+        <div class="row">
+          <label>主密码</label>
+          <input
+            type="password"
+            autoFocus
+            placeholder="输入主密码"
+            value={password}
+            onInput={(e) => setPassword(e.currentTarget.value)}
+          />
+        </div>
+        {error && <div class="err">{error}</div>}
+        <div class="row">
+          <button class="primary" type="submit" disabled={!password || busy}>{busy ? '解锁中…' : '解锁'}</button>
+        </div>
+        <div class="dest">SW 重启后需重新解锁；主密码不落盘，仅内存派生主密钥。</div>
+      </form>
       <a class="link" href="#" onClick={(e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); }}>
         打开设置页 →
       </a>
