@@ -97,6 +97,15 @@ function TranslationSection({ config }: { config: AppConfig }) {
         />
         <span class="muted">开启后译文边出边显（长页面体感更快）；关闭则整批返回，与 P0 一致</span>
       </div>
+      <div class="row">
+        <label>悬停翻译模式</label>
+        <input
+          type="checkbox"
+          checked={config.ui.hoverOnly}
+          onChange={(e) => void patchConfig({ ui: { hoverOnly: e.currentTarget.checked } })}
+        />
+        <span class="muted">开启后仅悬停段落即时翻译（轻量按需、低 token），不再自动批量翻译整页；可与按域名白名单组合</span>
+      </div>
     </div>
   );
 }

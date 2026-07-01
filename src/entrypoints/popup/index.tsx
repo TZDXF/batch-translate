@@ -8,7 +8,7 @@ import './popup.css';
 import type { AppConfig, TabTranslationState, TranslateMode } from '../../shared/types';
 import type { FromSWMessages, ToSWMessages } from '../../shared/messages';
 import { isRuntimeMessage, isStatus } from '../../shared/messages';
-import { activeEngine, engineLabel, loadConfig } from '../../background/config/config-store';
+import { activeEngine, engineLabel, loadConfig, patchConfig } from '../../background/config/config-store';
 
 interface TabStatus {
   state: TabTranslationState;
@@ -116,6 +116,17 @@ function App() {
             <option value="basic">基础</option>
             <option value="agent">智能体</option>
           </select>
+        </div>
+        <div class="row">
+          <label>悬停翻译</label>
+          <div
+            class={'toggle' + (config?.ui.hoverOnly ? ' on' : '')}
+            onClick={() => { if (config) void patchConfig({ ui: { hoverOnly: !config.ui.hoverOnly } }); }}
+            role="switch"
+            aria-checked={!!config?.ui.hoverOnly}
+            title="悬停段落即时翻译"
+          />
+          <span class="state">{config?.ui.hoverOnly ? '已开启' : '关闭'}</span>
         </div>
       </div>
 

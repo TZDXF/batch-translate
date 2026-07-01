@@ -57,8 +57,8 @@ export function flushStreamChunks(): void {
   streamThrottle.flush();
 }
 
-/** content 无法直接读自身 tabId；通过内部握手向 SW 取（sender.tab.id）。 */
-async function getMyTabId(): Promise<number | null> {
+/** content 无法直接读自身 tabId；通过内部握手向 SW 取（sender.tab.id）。hover 模式复用同款握手。 */
+export async function getMyTabId(): Promise<number | null> {
   try {
     const resp = (await chrome.runtime.sendMessage({ btInternal: 'tab-id' })) as { tabId?: number } | undefined;
     return typeof resp?.tabId === 'number' ? resp.tabId : null;
