@@ -102,6 +102,7 @@ function makeCtx(engine: OpenAIEngine): TranslateContext {
     mode: 'basic',
     scheduling: SCHEDULING,
     budget: computeBudget(ENGINE_CFG, SCHEDULING),
+    streaming: false,
   };
 }
 

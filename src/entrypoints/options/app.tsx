@@ -88,6 +88,15 @@ function TranslationSection({ config }: { config: AppConfig }) {
         </select>
         <span class="muted">智能体模式可自定义系统提示词 / 角色 / 风格预设（见下方）</span>
       </div>
+      <div class="row">
+        <label>流式渲染</label>
+        <input
+          type="checkbox"
+          checked={config.streaming.enabled}
+          onChange={(e) => void patchConfig({ streaming: { enabled: e.currentTarget.checked } })}
+        />
+        <span class="muted">开启后译文边出边显（长页面体感更快）；关闭则整批返回，与 P0 一致</span>
+      </div>
     </div>
   );
 }

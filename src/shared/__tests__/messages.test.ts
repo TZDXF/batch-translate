@@ -52,6 +52,7 @@ function makeConfig(): AppConfig {
     },
     scheduling: { ...DEFAULT_SCHEDULING },
     cache: { enabled: true, maxSizeMB: 100, ttlDays: 0 },
+    streaming: { enabled: false, engineUnsupportedFallback: true },
     ui: { showOriginal: true, translationStyle: '', hoverOnly: false, displayMode: 'bilingual' },
     domain: { mode: 'blacklist', blacklist: [], whitelist: [] },
     shortcuts: { toggle: 'Alt+Shift+T', cycleDisplayMode: 'Alt+Shift+D', retranslate: 'Alt+Shift+R' },

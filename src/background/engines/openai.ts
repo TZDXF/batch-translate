@@ -22,6 +22,7 @@
 import type { EngineConfig } from '../../shared/types';
 import type { Engine, TranslateRequest, TranslateResponse } from './adapter';
 import { EngineRequestError } from './adapter';
+import { openAIStreamDeltas, type EngineStreamEvent, type StreamingEngine } from './stream-adapter';
 
 /** OpenAI chat completions 请求体（仅本层用到的字段）。 */
 interface OpenAIChatRequest {
@@ -51,7 +52,7 @@ interface OpenAIErrorResponse {
  * OpenAI 兼容引擎。baseUrl 形如 `https://api.openai.com/v1`（无尾斜杠也可）。
  * 实际请求打到 `${baseUrl}/chat/completions`。
  */
-export class OpenAIEngine implements Engine {
+export class OpenAIEngine implements Engine, StreamingEngine {
   readonly id: string;
   readonly provider: string;
   private readonly baseUrl: string;
@@ -131,6 +132,40 @@ export class OpenAIEngine implements Engine {
     }
 
     return { content, usage: extractUsage(data) };
+  }
+
+  /**
+   * 流式翻译（P1-2 / TRA-17）：`stream:true` SSE，逐 delta yield `choices[0].delta.content`。
+   *
+   * 契约（stream-adapter.StreamingEngine）：先 yield 0..N 个 `{type:'delta'}`，最后 yield
+   * 一个 `{type:'done'}`（完整原文，由本层拼接 deltas 得到，供上层对齐/降级复用 P0-4）。
+   * AbortSignal 透传给 fetch；CANCEL 抛 AbortError（不可重试，架构 5.2）。
+   *
+   * 注意：流式不开启 json_mode 的 response_format —— 部分 endpoint 在 stream+json_object
+   * 组合下行为不稳定，流式靠 StreamingBatchParser 增量解析 + 最终 parseResponse 容错兜底
+   * （架构 4.4 双保险之二：解析容错链）。
+   */
+  async *translateStream(req: TranslateRequest): AsyncGenerator<EngineStreamEvent, void, unknown> {
+    const url = `${this.baseUrl}/chat/completions`;
+    const body: Omit<OpenAIChatRequest, 'stream'> & { stream: true } = {
+      model: this.model,
+      messages: [
+        { role: 'system', content: req.systemPrompt },
+        { role: 'user', content: req.userMessage },
+      ],
+      max_tokens: this.maxOutput,
+      temperature: 0,
+      stream: true,
+    };
+    // 流式不开 json_object（见上注释），靠解析容错。
+    void req.jsonMode;
+
+    let full = '';
+    for await (const delta of openAIStreamDeltas(url, this.headers(), JSON.stringify(body), req.signal)) {
+      full += delta;
+      yield { type: 'delta', content: delta };
+    }
+    yield { type: 'done', content: full };
   }
 
   /** 鉴权头。key 为空（如 Ollama 复用本类的边缘场景）时不带 Authorization。 */

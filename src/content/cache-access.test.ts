@@ -29,6 +29,7 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     agent: { systemPrompt: '', role: '', stylePreset: 'none', glossaryIds: [], pageContextEnabled: false },
     scheduling: { maxConcurrent: 3, rps: 2, tpmLimit: 0, maxRetries: 5, itemsPerBatch: 20, batchTokenBudgetRatio: 0.7 },
     cache: { enabled: true, maxSizeMB: 100, ttlDays: 0 },
+    streaming: { enabled: false, engineUnsupportedFallback: true },
     ui: { showOriginal: true, translationStyle: 'normal', hoverOnly: false, displayMode: 'bilingual' },
     domain: { mode: 'blacklist', blacklist: [], whitelist: [] },
     shortcuts: { toggle: 'Alt+Shift+T', cycleDisplayMode: 'Alt+Shift+D', retranslate: 'Alt+Shift+R' },

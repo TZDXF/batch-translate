@@ -164,6 +164,7 @@ function makeCtx(engine: Engine, overrides: Partial<TranslateContext> = {}): Tra
     mode: 'basic',
     scheduling: SCHEDULING,
     budget: { inputMax: 4000 },
+    streaming: false,
     ...overrides,
   };
 }
