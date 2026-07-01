@@ -198,6 +198,7 @@ export function buildPortServerDeps(mods: Stage2Modules): PortServerDeps {
       mode: config.mode,
       scheduling: config.scheduling,
       budget: computeBudget(engineCfg, config.scheduling),
+      streaming: config.streaming.enabled,
     };
     if (config.mode === 'agent') ctx.agent = config.agent;
     return ctx;

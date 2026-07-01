@@ -3,7 +3,6 @@
  * 值对齐 docs/ARCHITECTURE.md 第 2.2、5.2、5.3、6.1 节。
  */
 import type { EngineProvider, SchedulingConfig, Shortcuts } from './types';
-
 /** 运行时引擎 provider 列表（与 EngineProvider 类型一一对应）。 */
 export const ENGINE_PROVIDERS: readonly EngineProvider[] = [
   'openai',
@@ -30,6 +29,16 @@ export const DEFAULT_SCHEDULING: Readonly<SchedulingConfig> = {
   maxRetries: DEFAULT_MAX_RETRIES,
   itemsPerBatch: MAX_ITEMS_PER_BATCH,
   batchTokenBudgetRatio: DEFAULT_BATCH_TOKEN_BUDGET_RATIO,
+};
+
+// ─── 流式渲染默认（P1-2，架构 2.2） ────────────────────────────────────────
+/**
+ * 流式默认关闭（零回归验收项：关闭时行为与 P0 整批一致）。
+ * 用户在 options 开启后，长页面译文边出边显。
+ */
+export const DEFAULT_STREAMING: Readonly<{ enabled: boolean; engineUnsupportedFallback: boolean }> = {
+  enabled: false,
+  engineUnsupportedFallback: true,
 };
 
 // ─── 快捷键默认值（P1-3，架构 P1 路线图） ─────────────────────────────────

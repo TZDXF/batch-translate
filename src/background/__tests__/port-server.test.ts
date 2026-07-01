@@ -71,6 +71,7 @@ function makeCtx(tabId: number): TranslateContext {
     mode: 'basic',
     scheduling: { maxConcurrent: 3, rps: 2, tpmLimit: 0, maxRetries: 5, itemsPerBatch: 20, batchTokenBudgetRatio: 0.7 },
     budget: { inputMax: 4000 },
+    streaming: false,
   };
 }
 

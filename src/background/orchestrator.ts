@@ -35,6 +35,12 @@ import type {
   TranslationStatus,
 } from '../shared/types';
 import type { SMToContentPortMessage } from '../shared/messages';
+import {
+  StreamingBatchParser,
+  consumeStreamById,
+  isStreamingEngine,
+  type StreamingEngine,
+} from './engines/stream-adapter';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Stage 2 依赖契约（DI 接口）—— 签名对齐各 Stage 2 issue 验收标准
@@ -208,6 +214,12 @@ export interface TranslateContext {
   agent?: AgentConfig;
   scheduling: SchedulingConfig;
   budget: TokenBudget;
+  /**
+   * 流式渲染开关（P1-2 / TRA-17）。开启后，基础模式且引擎支持 translateStream 时
+   * 走流式路径：逐 chunk 经 port 推 STREAM_CHUNK，边出边显。智能体模式 / 引擎不支持
+   * 时回退非流式整批（零回归）。架构 2.2「流式（可选 P1）」。
+   */
+  streaming: boolean;
   /** 可选页面 URL，仅写入缓存条目本地字段，不随请求外发（架构 7.3）。 */
   sourceUrl?: string;
   /** 智能体模式页面上下文（标题/前段摘要，架构 4.3）。 */
@@ -451,6 +463,42 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
               for (const it of batch.items) emitError(it.id, reason);
             }
             return;
+          }
+
+          // ── 流式路径（P1-2 / TRA-17）：基础模式 + 引擎支持 translateStream 时启用 ──
+          // 逐 delta 喂 StreamingBatchParser，按 id 对齐还原 → emit STREAM_CHUNK 边出边显。
+          // 流结束用完整原文走 handleResult（与整批同源：对齐/缺段重发/降级/缓存），保证
+          // 「流式失败/中断降级为非流式整批」与「幂等可续传」契约。失败则落到下方 callEngine。
+          if (ctx.streaming && ctx.mode !== 'agent' && isStreamingEngine(ctx.engine as unknown)) {
+            const sengine = ctx.engine as unknown as StreamingEngine;
+            let streamedOk = false;
+            try {
+              const parser = new StreamingBatchParser();
+              const userMessage = deps.protocol.buildUserMessage(batch.items);
+              const full = await consumeStreamById(
+                sengine,
+                { systemPrompt, userMessage, targetLang: ctx.targetLang, jsonMode: true, signal: abort.signal },
+                parser,
+                (id, delta) => {
+                  if (abort.signal.aborted || disconnected) return;
+                  emit({ type: 'STREAM_CHUNK', id, chunk: delta });
+                },
+              );
+              if (abort.signal.aborted) {
+                for (const it of batch.items) emitSkipped(it.id);
+                return;
+              }
+              await handleResult(batch, full, level);
+              streamedOk = true;
+            } catch (err) {
+              if (isAbortError(err) || abort.signal.aborted) {
+                for (const it of batch.items) emitSkipped(it.id);
+                return;
+              }
+              // 流式失败（网络/解析中断）→ 降级非流式整批：落到下方 callEngine 路径。
+              // 已 emit 的 STREAM_CHUNK 会被最终 RESULT(setText) 覆盖修正，不重复/不丢段。
+            }
+            if (streamedOk) return;
           }
 
           const raw = await callEngine(batch);

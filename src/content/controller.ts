@@ -12,6 +12,7 @@ import {
   isPortMessage,
   isProgress,
   isResult,
+  isStreamChunk,
 } from '../shared/messages';
 import type { DisplayMode, Item, Paragraph } from '../shared/types';
 import { extract } from './extractor/dom-walker';
@@ -20,6 +21,7 @@ import type { Placeholder } from '../shared/types';
 import { ParagraphRegistry } from './paragraph-registry';
 import { render, type RenderActions, type RenderHandle } from './renderer/bilingual-renderer';
 import { LayoutGuard } from './renderer/layout-guard';
+import { StreamChunkThrottle } from './stream-chunk-buffer';
 import { loadConfig } from '../background/config/config-store';
 import { updateControlBar } from './floating-ui/mount';
 import { evictCache, writebackCache } from './cache-access';
@@ -39,6 +41,21 @@ const registry = new ParagraphRegistry();
 const layoutGuard = new LayoutGuard();
 // paragraphId → 渲染句柄（RESULT 回填 / ERROR 占位 / 关闭时移除）。
 const handles = new Map<string, RenderHandle>();
+
+// ── 流式 chunk 节流（P1-2 / TRA-17）─────────────────────────────────────────
+// STREAM_CHUNK 高频到达，用 StreamChunkThrottle 合并同 tick 内多 chunk 为一次 appendChunk。
+// 流式结束 RESULT 会 setText 整段覆盖并 discard 该 id 的 pending，不重复/不丢段。
+const streamThrottle = new StreamChunkThrottle({
+  onFlush(id, delta) {
+    const handle = handles.get(id);
+    if (handle) handle.appendChunk(delta);
+  },
+});
+
+/** 立即 flush 所有 pending 流式 chunk（teardown / 测试用）。 */
+export function flushStreamChunks(): void {
+  streamThrottle.flush();
+}
 
 /** content 无法直接读自身 tabId；通过内部握手向 SW 取（sender.tab.id）。 */
 async function getMyTabId(): Promise<number | null> {
@@ -132,6 +149,7 @@ export async function stopTranslation(): Promise<void> {
 
 /** 移除全部已注入译文 wrapper + 停止 layout-guard 监听。 */
 function teardownRendering(): void {
+  streamThrottle.clear();
   for (const id of [...handles.keys()]) {
     const h = handles.get(id);
     layoutGuard.unwatch(id);
@@ -289,6 +307,34 @@ export async function cycleDisplayMode(): Promise<void> {
   }
 }
 
+/**
+ * 流式 chunk 增量渲染（P1-2 / TRA-17）：收到 STREAM_CHUNK 时，确保 wrapper 存在（首次
+ * 懒创建空译文 wrapper，状态 translating），把 chunk 累加进 pending 缓冲，由节流定时器
+ * 合并 flush 到 handle.appendChunk。RESULT 到达时 setText 整段覆盖，pending 同步清空。
+ */
+function applyStreamChunk(id: string, chunk: string): void {
+  const entry = registry.get(id);
+  if (!entry) return;
+  // 首次 chunk：懒创建空译文 wrapper（不标 translated，保持 translating 状态）。
+  if (!handles.get(id)) {
+    const placeholders = paragraphPlaceholders(id);
+    const restorer = (text: string): Node[] => {
+      if (placeholders && placeholders.length > 0) return [restore(text, placeholders, document)];
+      return [document.createTextNode(text)];
+    };
+    const paragraph: Paragraph = { id: entry.id, text: entry.sourceText, node: entry.node };
+    const mode = displayMode;
+    const style = (lastConfigUi?.translationStyle as 'normal' | 'blur' | 'underline' | 'highlight' | undefined) ?? 'normal';
+    const handle = render(paragraph, '', { displayMode: mode, style, restoreMarkup: restorer });
+    handles.set(id, handle);
+    registry.setWrapper(id, handle.wrapper);
+    registry.setStatus(id, 'translating');
+    handle.wrapper.addEventListener('mouseenter', () => { lastHoveredId = id; });
+    layoutGuard.watch(id, entry.node, handle.wrapper, handle.target);
+  }
+  streamThrottle.push(id, chunk);
+}
+
 function onPortMessage(m: unknown): void {
   if (!isPortMessage(m)) return;
   if (isProgress(m)) {
@@ -296,10 +342,15 @@ function onPortMessage(m: unknown): void {
       updateControlBar({ state: 'translating' });
     }
   } else if (isResult(m)) {
+    // 流式结束：清掉该段 pending（避免 flush 在 setText 后追加陈旧 delta），整段覆盖。
+    streamThrottle.discard(m.id);
     doneCount++;
     if (total > 0) updateControlBar({ progress: Math.min(1, doneCount / total) });
     applyResult(m.id, m.translated);
+  } else if (isStreamChunk(m)) {
+    applyStreamChunk(m.id, m.chunk);
   } else if (isError(m)) {
+    streamThrottle.discard(m.id);
     applyError(m.id, m.reason);
     updateControlBar({ state: 'error', error: m.reason });
   } else if (isBatchDone(m)) {

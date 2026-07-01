@@ -20,6 +20,7 @@ import type {
   EngineProvider,
   SchedulingConfig,
   Shortcuts,
+  StreamingConfig,
   TranslateMode,
   UIConfig,
 } from '../../shared/types';
@@ -27,6 +28,7 @@ import {
   CACHE_DEFAULT_MAX_SIZE_MB,
   DEFAULT_SCHEDULING,
   DEFAULT_SHORTCUTS,
+  DEFAULT_STREAMING,
   MAX_ITEMS_PER_BATCH,
   STORAGE_KEY_CONFIG,
 } from '../../shared/constants';
@@ -83,6 +85,7 @@ export function getDefaultConfig(): AppConfig {
     },
     scheduling: { ...DEFAULT_SCHEDULING },
     cache: { enabled: true, maxSizeMB: CACHE_DEFAULT_MAX_SIZE_MB, ttlDays: 0 },
+    streaming: { ...DEFAULT_STREAMING },
     ui: { showOriginal: true, translationStyle: 'default', hoverOnly: false, displayMode: 'bilingual' },
     domain: { mode: 'blacklist', blacklist: [], whitelist: [] },
     shortcuts: { ...DEFAULT_SHORTCUTS },
@@ -157,6 +160,15 @@ export function normalizeConfig(raw: unknown): AppConfig {
     ttlDays: Math.round(clampNum(cacheSrc['ttlDays'], 0, 3650, 0)),
   };
 
+  const streamSrc = (typeof r['streaming'] === 'object' && r['streaming'] !== null ? r['streaming'] : {}) as Record<string, unknown>;
+  const streaming: StreamingConfig = {
+    enabled: typeof streamSrc['enabled'] === 'boolean' ? streamSrc['enabled'] : def.streaming.enabled,
+    engineUnsupportedFallback:
+      typeof streamSrc['engineUnsupportedFallback'] === 'boolean'
+        ? streamSrc['engineUnsupportedFallback']
+        : def.streaming.engineUnsupportedFallback,
+  };
+
   const uiSrc = (typeof r['ui'] === 'object' && r['ui'] !== null ? r['ui'] : {}) as Record<string, unknown>;
   const ui: UIConfig = {
     showOriginal: typeof uiSrc['showOriginal'] === 'boolean' ? uiSrc['showOriginal'] : def.ui.showOriginal,
@@ -191,6 +203,7 @@ export function normalizeConfig(raw: unknown): AppConfig {
     agent,
     scheduling: normalizeScheduling((typeof r['scheduling'] === 'object' && r['scheduling'] !== null ? r['scheduling'] : {}) as Partial<SchedulingConfig>),
     cache,
+    streaming,
     ui,
     domain,
     shortcuts,
@@ -272,6 +285,7 @@ export interface ConfigPatch {
   agent?: Partial<AgentConfig>;
   scheduling?: Partial<SchedulingConfig>;
   cache?: Partial<CacheConfig>;
+  streaming?: Partial<StreamingConfig>;
   ui?: Partial<UIConfig>;
   domain?: Partial<DomainPolicy>;
   shortcuts?: Partial<Shortcuts>;
@@ -288,6 +302,7 @@ export async function patchConfig(patch: ConfigPatch): Promise<AppConfig> {
     ...(patch.activeEngineId !== undefined ? { activeEngineId: patch.activeEngineId } : {}),
     scheduling: normalizeScheduling({ ...cur.scheduling, ...(patch.scheduling ?? {}) }),
     cache: { ...cur.cache, ...(patch.cache ?? {}) },
+    streaming: { ...cur.streaming, ...(patch.streaming ?? {}) },
     agent: { ...cur.agent, ...(patch.agent ?? {}) },
     ui: { ...cur.ui, ...(patch.ui ?? {}) },
     domain: { ...cur.domain, ...(patch.domain ?? {}) },

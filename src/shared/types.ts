@@ -116,6 +116,18 @@ export interface CacheConfig {
   ttlDays: number;
 }
 
+/**
+ * 流式渲染配置（P1-2 / TRA-17）。
+ * - enabled：流式总开关。关闭时 orchestrator 走 P0 整批路径，零回归（验收项）。
+ * - engineUnsupportedFallback：引擎未实现 translateStream 时是否自动回退非流式（默认 true）。
+ * 架构 2.2「流式（可选 P1）：SW → content STREAM_CHUNK」。
+ */
+export interface StreamingConfig {
+  enabled: boolean;
+  /** 引擎不支持流式时自动回退整批非流式（默认 true；关则引擎不支持即报错）。 */
+  engineUnsupportedFallback: boolean;
+}
+
 /** UI 偏好。见架构 6.2 ui。 */
 export interface UIConfig {
   showOriginal: boolean;
@@ -159,6 +171,7 @@ export interface AppConfig {
   agent: AgentConfig;
   scheduling: SchedulingConfig;
   cache: CacheConfig;
+  streaming: StreamingConfig;
   ui: UIConfig;
   domain: DomainPolicy;
   shortcuts: Shortcuts;

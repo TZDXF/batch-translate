@@ -74,6 +74,7 @@ function makeCtx(engine: ReturnType<typeof makeMockEngine>['engine'], engineCfg:
     mode: 'basic',
     scheduling: SCHEDULING,
     budget: computeBudget(engineCfg, SCHEDULING),
+    streaming: false,
   };
 }
 
